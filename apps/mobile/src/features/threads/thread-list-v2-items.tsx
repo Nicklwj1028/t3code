@@ -32,7 +32,6 @@ import {
 } from "@t3tools/contracts";
 import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
-import { isThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -979,7 +978,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     snoozeSupported: props.snoozeSupported,
     snoozable: canSnooze(thread, { now: snoozeGateNow }),
     snoozed: snoozedRow,
-    working: isThreadWorking(thread),
   });
   const snoozePresets = resolveThreadListV2SnoozePresets(
     {
@@ -1172,7 +1170,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         nested,
         direct: [
           ...direct,
-          ...(swipeActions.primary === "settle" ? [localized(CARD_MENU_ACTIONS[0]!)] : []),
+          localized(CARD_MENU_ACTIONS[0]!),
           ...(swipeActions.secondary === "snooze"
             ? [
                 {
@@ -1206,7 +1204,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     snoozedRow,
     gt,
     m,
-    swipeActions.primary,
     swipeActions.secondary,
     thread.branch,
     titleMenuItems,
@@ -1300,7 +1297,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ],
   );
   const primaryAction = useMemo(() => {
-    if (swipeActions.primary === null) return null;
     if (swipeActions.primary === "archive") {
       return {
         accessibilityLabel: gt("Archive {title}", { title: thread.title }),
@@ -1359,12 +1355,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               onPressAction: handleMenuAction,
               title: gt("Snooze until"),
             },
-            onPress: () => setCustomSnoozeOpen(true),
+            onPress: () => undefined,
           }
         : null,
-    [gt, setCustomSnoozeOpen, handleMenuAction, snoozePresetActions, swipeActions.secondary, thread.title],
+    [gt, handleMenuAction, snoozePresetActions, swipeActions.secondary, thread.title],
   );
-  const swipeAccessibilityHint = !canOperateThread || primaryAction === null
+  const swipeAccessibilityHint = !canOperateThread
     ? gt("Opens the thread")
     : secondaryAction === null
       ? primaryAction.swipeHint
@@ -1763,20 +1759,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   if (!canOperateThread)
     return <View style={rowAppearance.swipeContainerStyle}>{rowContent(() => {})}</View>;
 
-  const swipePrimaryAction = primaryAction ?? secondaryAction;
-  if (swipePrimaryAction === null) {
-    return (
-      <Menu
-        accessibilityLabel={rowAccessibilityLabel}
-        actions={menuActions}
-        onPressAction={handleMenuAction}
-        shouldOpenOnLongPress
-      >
-        {rowContent(() => {})}
-      </Menu>
-    );
-  }
-
   return (
     <View collapsable={false}>
       {customSnoozeOpen && (
@@ -1795,9 +1777,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         onDelete={handleDelete}
         onSwipeableClose={props.onSwipeableClose}
         onSwipeableWillOpen={props.onSwipeableWillOpen}
-        primaryAction={swipePrimaryAction}
-        secondaryAction={primaryAction === null ? null : secondaryAction}
-        resetKey={`${thread.environmentId}:${thread.id}:${variant}:${swipeActions.primary}:${snoozedRow}:${thread.settledAt}:${thread.unsettledAt}:${thread.snoozedUntil}:${thread.pinnedAt}`}
+        primaryAction={primaryAction}
+        secondaryAction={secondaryAction}
+        resetKey={`${thread.environmentId}:${thread.id}:${variant}:${snoozedRow}:${thread.settledAt}:${thread.unsettledAt}:${thread.snoozedUntil}:${thread.pinnedAt}`}
         simultaneousWith={props.simultaneousSwipeGesture}
         threadTitle={thread.title}
       >
