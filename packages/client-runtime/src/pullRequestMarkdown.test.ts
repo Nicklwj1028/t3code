@@ -5,10 +5,13 @@ import { unified } from "unified";
 import { describe, expect, it } from "vite-plus/test";
 import { SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 
-import { splitPullRequestBody, type PullRequestBodySegment } from "./pullRequestMarkdown.ts";
+import {
+  splitPullRequestBody,
+  pullRequestMediaResource,
+  type PullRequestBodySegment,
+} from "./pullRequestMarkdown.ts";
 import {
   changeRequestReferenceAutolinker,
-  pullRequestMediaResource,
   resolveChangeRequestMediaUrl,
 } from "./pullRequestReferences.ts";
 
