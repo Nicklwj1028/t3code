@@ -58,6 +58,7 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../lib/copyThreadReference";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentScope } from "../../state/session";
+import { useHasThreadMoveTarget } from "../../state/threadMove";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
   pendingDraftBranchNeedsRefs,
@@ -931,6 +932,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  const hasMoveTarget = useHasThreadMoveTarget(thread.environmentId);
+  const canMoveToEnvironment = canOperateThread && hasMoveTarget;
   const canShareWithGuest = useCanShareWithGuest(thread.environmentId);
   const navigation = useNavigation();
   const handleRegenerateTitle = useCallback(
@@ -1087,8 +1090,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             } satisfies MenuAction,
           ]
         : []),
+      ...(canMoveToEnvironment
+        ? [
+            {
+              id: "move-to-environment",
+              title: gt("Move to another machine…"),
+              image: "arrow.right.circle",
+              attributes: { disabled: !threadCanArchive(thread.runtime) },
+            } satisfies MenuAction,
+          ]
+        : []),
     ],
     [
+      canMoveToEnvironment,
       canTurnIntoProject,
       gt,
       m,
@@ -1244,6 +1258,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
       if (nativeEvent.event === "copy-thread-id") {
         copyTextWithHaptic(thread.id, { target: "thread-id" });
+      }
+      if (nativeEvent.event === "move-to-environment") {
+        navigation.navigate("ThreadMove", {
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+        });
       }
       if (nativeEvent.event === "share-guest") {
         navigation.navigate("ThreadGuestShare", {
