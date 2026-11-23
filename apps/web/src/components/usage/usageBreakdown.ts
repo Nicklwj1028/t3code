@@ -49,10 +49,18 @@ const TYPE_COLORS = {
 
 export function costTypeSegments(cost: CategoryCost): readonly ShareSegment[] {
   return [
-    { label: msg("Input"), value: cost.input, color: TYPE_COLORS.input },
+    {
+      label: msg("Input", { $context: "input tokens" }),
+      value: cost.input,
+      color: TYPE_COLORS.input,
+    },
     { label: msg("Cache read"), value: cost.cacheRead, color: TYPE_COLORS.cacheRead },
     { label: msg("Cache write"), value: cost.cacheWrite, color: TYPE_COLORS.cacheWrite },
-    { label: msg("Output"), value: cost.output, color: TYPE_COLORS.output },
+    {
+      label: msg("Output", { $context: "output tokens" }),
+      value: cost.output,
+      color: TYPE_COLORS.output,
+    },
     {
       label: msg("Other"),
       value: cost.unsplit >= 0.005 ? cost.unsplit : 0,
@@ -65,10 +73,18 @@ export function tokenTypeSegments(
   tokens: Omit<UsageTokenTotals, "reasoningTokens">,
 ): readonly ShareSegment[] {
   return [
-    { label: msg("Input"), value: tokens.uncachedInputTokens, color: TYPE_COLORS.input },
+    {
+      label: msg("Input", { $context: "input tokens" }),
+      value: tokens.uncachedInputTokens,
+      color: TYPE_COLORS.input,
+    },
     { label: msg("Cache read"), value: tokens.cachedInputTokens, color: TYPE_COLORS.cacheRead },
     { label: msg("Cache write"), value: tokens.cacheCreationTokens, color: TYPE_COLORS.cacheWrite },
-    { label: msg("Output"), value: tokens.outputTokens, color: TYPE_COLORS.output },
+    {
+      label: msg("Output", { $context: "output tokens" }),
+      value: tokens.outputTokens,
+      color: TYPE_COLORS.output,
+    },
   ];
 }
 
