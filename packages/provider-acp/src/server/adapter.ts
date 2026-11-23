@@ -16,6 +16,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
+  type OrchestrationV2SubagentWorkflow,
   type OrchestrationV2TurnItem,
   type OrchestrationV2UserInputQuestion,
   type OrchestrationV2WebSearchResult,
@@ -155,6 +156,12 @@ const ACP_BUSY_PROMPT_RETRY_INTERVAL: Duration.Input = "1 second";
 // Agents such as omp advertise a loaded session's commands shortly after answering session/load.
 const ACP_LOADED_COMMANDS_WAIT: Duration.Input = "2 seconds";
 const ACP_PROMPT_INACTIVITY_SLICE_MILLIS = 60_000;
+const ACP_NATIVE_WORKFLOW_POLL = Duration.millis(1_500);
+const ACP_NATIVE_WORKFLOW_UNREADABLE_MILLIS = 60_000;
+// As long as an open prompt may go silent: a workflow whose records stop changing stops holding.
+// Wall-clock on purpose: after a host sleep this can settle the turn early, and the next turn
+// picks a swarm still at work back up from its records.
+const ACP_NATIVE_WORKFLOW_STALL_MILLIS = 15 * 60_000;
 const ACP_HOST_SLEEP_TOLERANCE_MILLIS = 10_000;
 
 // pi-agent-core agents (oh-my-pi) end a turn while background work runs and reject
@@ -440,6 +447,8 @@ export interface AcpAdapterV2Flavor {
     text: string,
     turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
   ) => Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner>;
+  /** The rewrite only wraps the user's message, so it is treated as the message it wraps. */
+  readonly rewriteKeepsUserMessage?: boolean;
   readonly driver: ProviderDriverKind;
   readonly capabilities: OrchestrationV2ProviderCapabilities;
   readonly supportsNativeGoals?: Effect.Effect<boolean>;
@@ -694,6 +703,15 @@ export interface AcpAdapterV2Flavor {
    * through `ACP_OPEN_REPLY_QUIET_LIMIT` instead of closing early.
    */
   readonly hasPendingReply?: (sessionId: string) => Effect.Effect<boolean>;
+  /**
+   * A team the agent runs from this session outside ACP (Antigravity `/swarm`), shown as one
+   * workflow subagent read from the agent's own records. `isTool` names the tool calls that
+   * manage it; they fold into the workflow instead of showing as tools.
+   */
+  readonly nativeWorkflow?: {
+    readonly isTool: (toolCall: AcpToolCallState) => boolean;
+    readonly read: (sessionId: string) => Effect.Effect<AcpNativeWorkflowSnapshot | undefined>;
+  };
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
   /** Interrupt the local prompt fiber before `session/cancel` (Grok wedged prompts). */
   readonly interruptPromptOnCancel?: boolean;
@@ -811,6 +829,18 @@ export interface AcpAdapterV2SubagentUpdate {
   readonly childSessionId: string | null;
   readonly result: string | null;
   readonly suppressNormalTool?: boolean;
+  readonly workflow?: OrchestrationV2SubagentWorkflow;
+}
+
+export interface AcpNativeWorkflowSnapshot {
+  readonly nativeTaskId: string;
+  readonly title: string;
+  readonly prompt: string;
+  readonly workflow: OrchestrationV2SubagentWorkflow;
+  /** Any member still works; holds the turn open like a running subagent. */
+  readonly active: boolean;
+  /** Changes whenever the team makes progress, shown or not; a stall clock reads it. */
+  readonly progress?: string;
 }
 
 export interface AcpAdapterV2Options {
@@ -834,6 +864,8 @@ export interface AcpAdapterV2Options {
     readonly afterPromptWireSettled?: () => Effect.Effect<void>;
     readonly afterPromptSettledWithBackgroundWork?: () => Effect.Effect<void>;
     readonly afterPromptCallback?: () => Effect.Effect<void>;
+    /** The native workflow watch finished one read of the agent's records. */
+    readonly afterNativeWorkflowRead?: () => Effect.Effect<void>;
     readonly onNativeResponseLifecycle?: (event: {
       readonly generation?: number;
       readonly requestId?: string;
@@ -1787,6 +1819,20 @@ interface ActiveAcpTurn {
   /** Clock millis of the prompt's last progress, for `promptInactivityTimeout`. */
   lastProgressAt: number;
   inactivityWatchdog: Fiber.Fiber<void> | undefined;
+  nativeWorkflowWatching: boolean;
+  /** The turn called a `nativeWorkflow` tool, so the workflow belongs to it even if unchanged. */
+  nativeWorkflowToolSeen: boolean;
+  /** The watch has read the agent's records since the last native workflow call. */
+  nativeWorkflowRead: boolean;
+  /** Counts native workflow calls, so a read that began before the latest call does not count. */
+  nativeWorkflowCalls: number;
+  /** Native workflow member threads this turn has announced, so its run routes their updates. */
+  readonly nativeWorkflowMembers: Set<string>;
+  /** Clock millis when reads of a workflow this turn holds open began to fail, if they fail. */
+  nativeWorkflowUnreadableSince: number | undefined;
+  /** Clock millis when the workflow's records last changed during this turn. */
+  nativeWorkflowChangedAt: number | undefined;
+  nativeWorkflowProgress: string | undefined;
 }
 
 const PROMPT_OUTCOME_CHECK_TIMEOUT = Duration.seconds(5);
@@ -3723,10 +3769,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               ? context.subagentsBySessionId.get(update.childSessionId)
               : undefined);
           const updateIsTerminal = acpSubagentStatusIsTerminal(update.status);
+          // A native workflow can take on more work after its members all parked.
           if (
             existing !== undefined &&
             acpSubagentStatusIsTerminal(existing.task.status) &&
-            !updateIsTerminal
+            !updateIsTerminal &&
+            update.workflow === undefined
           ) {
             return;
           }
@@ -3734,7 +3782,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             existing !== undefined &&
             existing.task.status === update.status &&
             updateIsTerminal &&
-            existing.terminalStatusProjected
+            existing.terminalStatusProjected &&
+            update.workflow === undefined
           ) {
             return;
           }
@@ -3766,6 +3815,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const turnItemOrdinal =
             existing?.turnItemOrdinal ?? (yield* resolveItemOrdinal(context, nativeTaskId));
           const taskStatus = update.status;
+          const writesPrompt =
+            existing === undefined ||
+            (update.workflow !== undefined && update.prompt !== existing.task.prompt);
           const task: OrchestrationV2Subagent = {
             ...(existing?.task ?? {
               id: nodeId,
@@ -3785,6 +3837,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               startedAt: now,
             }),
             model: update.model?.trim() || existing?.task.model || null,
+            ...(update.workflow === undefined
+              ? {}
+              : { workflow: update.workflow, prompt: update.prompt }),
             status: taskStatus,
             result: update.result ?? existing?.task.result ?? null,
             completedAt: acpSubagentStatusIsTerminal(taskStatus) ? now : null,
@@ -3841,6 +3896,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 creationSource: "provider",
               }),
             });
+          }
+          if (writesPrompt) {
             const promptNativeItemId = `${nativeTaskId}:prompt`;
             const promptArtifacts = makeSubagentConversationArtifacts({
               senderThreadId: context.input.threadId,
@@ -3853,6 +3910,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               nativeItemRef: { driver, nativeId: promptNativeItemId, strength: "weak" },
               role: "user",
               text: update.prompt,
+              ...(update.workflow === undefined ? {} : { workflowScript: true }),
               ordinal: 100,
               now,
             });
@@ -3997,6 +4055,380 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           if (acpSubagentStatusIsTerminal(taskStatus)) {
             subagent.terminalStatusProjected = true;
           }
+        });
+
+        // Last projected state per native workflow and member, across turns of this session.
+        const nativeWorkflowProjected = new Map<string, ReadonlyArray<unknown>>();
+
+        const projectNativeWorkflowMembers = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+          coordinator: ActiveAcpSubagent,
+          workflow: OrchestrationV2SubagentWorkflow,
+        ) {
+          const parentThread = { ...context.input.appThread, id: coordinator.childThreadId };
+          const providerInstanceId = context.input.modelSelection.instanceId;
+          for (const member of workflow.agents) {
+            const childThreadId = member.childThreadId;
+            if (childThreadId === undefined) continue;
+            const memberKey = `${coordinator.childThreadId}:agent:${member.label}`;
+            const status =
+              (member.state === "queued" || member.state === "running") &&
+              coordinator.task.status !== "running"
+                ? coordinator.task.status
+                : member.state === "queued"
+                  ? "pending"
+                  : member.state;
+            const prompt = member.prompt ?? member.label;
+            const result = member.result ?? null;
+            const model = member.model ?? context.input.modelSelection.model;
+            const previous = nativeWorkflowProjected.get(memberKey);
+            const next = [status, model, prompt, result, member.startedAt, member.completedAt];
+            if (
+              previous !== undefined &&
+              Equal.equals(previous, next) &&
+              context.nativeWorkflowMembers.has(memberKey)
+            )
+              continue;
+            const [, previousModel, previousPrompt, previousResult] = previous ?? [];
+            nativeWorkflowProjected.set(memberKey, next);
+            const now = yield* DateTime.now;
+            const nodeId = providerNodeId(memberKey);
+            const childRootNodeId = providerNodeId(`${memberKey}:thread-root`);
+            const nativeItemRef = { driver, nativeId: memberKey, strength: "strong" as const };
+            // A later turn that takes the workflow over re-announces its members' threads.
+            if (
+              previous === undefined ||
+              previousModel !== model ||
+              !context.nativeWorkflowMembers.has(memberKey)
+            ) {
+              context.nativeWorkflowMembers.add(memberKey);
+              yield* emitProviderEvent({
+                type: "app_thread.created",
+                driver,
+                appThread: makeSubagentChildThread({
+                  parentThread,
+                  childThreadId,
+                  parentNodeId: nodeId,
+                  activeProviderThreadId: null,
+                  providerInstanceId,
+                  modelSelection: { instanceId: providerInstanceId, model },
+                  title: member.label,
+                  now,
+                  createdBy: "agent",
+                  creationSource: "provider",
+                }),
+              });
+            }
+            for (const [role, text, ordinal, changed] of [
+              ["user", prompt, 100, previousPrompt !== prompt],
+              ["assistant", result, 200, result !== null && previousResult !== result],
+            ] as const) {
+              if (!changed || text === null) continue;
+              const nativeId = `${memberKey}:${role}`;
+              const artifacts = makeSubagentConversationArtifacts({
+                ...(role === "user" ? { senderThreadId: coordinator.childThreadId } : {}),
+                messageId: providerMessageId(nativeId),
+                turnItemId: providerTurnItemId(nativeId),
+                threadId: childThreadId,
+                rootNodeId: childRootNodeId,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: { driver, nativeId, strength: "weak" },
+                role,
+                text,
+                ordinal,
+                now,
+              });
+              yield* emitProviderEvent({
+                type: "message.updated",
+                driver,
+                message: artifacts.message,
+              });
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver,
+                turnItem: artifacts.turnItem,
+              });
+            }
+            const startedAt =
+              member.startedAt === undefined ? now : DateTime.makeUnsafe(member.startedAt);
+            const completedAt = acpSubagentStatusIsTerminal(status)
+              ? member.completedAt === undefined
+                ? now
+                : DateTime.makeUnsafe(member.completedAt)
+              : null;
+            const nodeBase = {
+              runId: null,
+              status,
+              countsForRun: false,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef,
+              runtimeRequestId: null,
+              checkpointScopeId: null,
+              startedAt,
+              completedAt,
+            };
+            yield* emitProviderEvent({
+              type: "node.updated",
+              driver,
+              node: {
+                ...nodeBase,
+                id: nodeId,
+                threadId: coordinator.childThreadId,
+                parentNodeId: coordinator.childRootNodeId,
+                rootNodeId: coordinator.childRootNodeId,
+                kind: "subagent",
+              },
+            });
+            yield* emitProviderEvent({
+              type: "node.updated",
+              driver,
+              node: {
+                ...nodeBase,
+                id: childRootNodeId,
+                threadId: childThreadId,
+                parentNodeId: null,
+                rootNodeId: childRootNodeId,
+                kind: "root_turn",
+              },
+            });
+            yield* emitProviderEvent({
+              type: "subagent.updated",
+              driver,
+              subagent: {
+                id: nodeId,
+                threadId: coordinator.childThreadId,
+                runId: null,
+                parentNodeId: coordinator.childRootNodeId,
+                origin: "provider_native",
+                createdBy: "agent",
+                driver,
+                providerInstanceId,
+                providerThreadId: null,
+                childThreadId,
+                nativeTaskRef: nativeItemRef,
+                prompt,
+                title: member.label,
+                model,
+                status,
+                result,
+                startedAt,
+                completedAt,
+                updatedAt: now,
+              },
+            });
+          }
+        });
+
+        // A workflow whose records stay unreadable this long stops holding the turn open.
+        const heldNativeWorkflow = (context: ActiveAcpTurn) =>
+          [...context.subagents.values()].find(
+            (subagent) =>
+              subagent.task.workflow !== undefined &&
+              acpSubagentStatusBlocksTurnSettlement(subagent.task.status),
+          );
+
+        const releaseUnreadableNativeWorkflow = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+        ) {
+          const owns = [...context.subagents.values()].some(
+            (subagent) => subagent.task.workflow !== undefined,
+          );
+          if (!owns) return;
+          const now = yield* Clock.currentTimeMillis;
+          // Recorded even after a stall released the hold, so the next readable read starts fresh.
+          context.nativeWorkflowUnreadableSince ??= now;
+          if (heldNativeWorkflow(context) === undefined) return;
+          if (now - context.nativeWorkflowUnreadableSince < ACP_NATIVE_WORKFLOW_UNREADABLE_MILLIS) {
+            return;
+          }
+          yield* releaseNativeWorkflowHold(context);
+        });
+
+        // The workflow goes idle with its workers, so the turn settles; a later read that shows
+        // it at work holds the turn again.
+        const releaseNativeWorkflowHold = Effect.fnUntraced(function* (context: ActiveAcpTurn) {
+          const held = heldNativeWorkflow(context);
+          if (held === undefined) return;
+          yield* runtimeCallbackPermit.withPermit(
+            Effect.gen(function* () {
+              if (context.finalized) return;
+              yield* emitSubagent(context, {
+                nativeTaskId: held.task.nativeTaskRef?.nativeId ?? held.task.id,
+                prompt: held.task.prompt,
+                title: held.task.title,
+                model: held.task.model,
+                status: "idle",
+                childSessionId: null,
+                result: null,
+              });
+              // Workers still shown as working take the coordinator's idle status with it.
+              if (held.task.workflow !== undefined) {
+                yield* projectNativeWorkflowMembers(context, held, held.task.workflow);
+              }
+              yield* rearmDeferredFinalize(context);
+            }),
+          );
+        });
+
+        /** Returns whether the session has a native workflow. */
+        const syncNativeWorkflow = Effect.fnUntraced(function* (context: ActiveAcpTurn) {
+          if (flavor.nativeWorkflow === undefined) return false;
+          const read = yield* flavor.nativeWorkflow.read(context.nativeThreadId);
+          if (read === undefined) {
+            yield* releaseUnreadableNativeWorkflow(context);
+            return false;
+          }
+          const recovered = context.nativeWorkflowUnreadableSince !== undefined;
+          context.nativeWorkflowUnreadableSince = undefined;
+          // Records that read again after a failure count as a change for the stall clock.
+          if (recovered) context.nativeWorkflowChangedAt = undefined;
+          const { nativeTaskId } = read;
+          // A brief or result can scroll out of the board's tail; keep what an earlier poll saw.
+          const earlier = (
+            nativeWorkflowProjected.get(nativeTaskId)?.[3] as
+              | OrchestrationV2SubagentWorkflow
+              | undefined
+          )?.agents;
+          const merged = {
+            ...read,
+            workflow: {
+              ...read.workflow,
+              agents: read.workflow.agents.map((member) => {
+                const seen = earlier?.find((candidate) => candidate.label === member.label);
+                return {
+                  ...member,
+                  ...(member.prompt === undefined && seen?.prompt !== undefined
+                    ? { prompt: seen.prompt }
+                    : {}),
+                  ...(member.result === undefined && seen?.result !== undefined
+                    ? { result: seen.result }
+                    : {}),
+                };
+              }),
+            },
+          };
+          // The plan lists every brief, so it is built from the members after the merge.
+          const briefs = merged.workflow.agents.flatMap((member) =>
+            member.prompt === undefined ? [] : [`@${member.label} ${member.prompt}`],
+          );
+          const snapshot = {
+            ...merged,
+            prompt: briefs.length === 0 ? merged.prompt : briefs.join("\n\n"),
+          };
+          const owned = context.subagents.has(nativeTaskId);
+          const key = [snapshot.title, snapshot.prompt, snapshot.active, snapshot.workflow];
+          const previous = nativeWorkflowProjected.get(nativeTaskId);
+          const changed = previous === undefined || !Equal.equals(previous, key);
+          const progressed = read.progress !== context.nativeWorkflowProgress;
+          context.nativeWorkflowProgress = read.progress;
+          const now = yield* Clock.currentTimeMillis;
+          if (changed || progressed || context.nativeWorkflowChangedAt === undefined) {
+            context.nativeWorkflowChangedAt = now;
+          } else if (now - context.nativeWorkflowChangedAt >= ACP_NATIVE_WORKFLOW_STALL_MILLIS) {
+            // Records that read fine but stop changing (a worker whose transcript cannot be
+            // read stays queued) must not hold the turn forever.
+            yield* releaseNativeWorkflowHold(context);
+            return true;
+          }
+          // A working swarm joins every turn; a finished one only a turn that manages it.
+          // One released as unreadable resumes once its records show it at work again.
+          const card = context.subagents.get(nativeTaskId);
+          const resumes =
+            snapshot.active &&
+            card !== undefined &&
+            !acpSubagentStatusBlocksTurnSettlement(card.task.status) &&
+            context.nativeWorkflowUnreadableSince === undefined &&
+            now - context.nativeWorkflowChangedAt < ACP_NATIVE_WORKFLOW_STALL_MILLIS;
+          const joins = owned
+            ? changed || resumes
+            : snapshot.active || context.nativeWorkflowToolSeen;
+          if (!joins) return true;
+          const coordinatorThreadId =
+            context.subagents.get(nativeTaskId)?.childThreadId ??
+            idAllocator.derive.subagentThread({
+              driver,
+              providerInstanceId: context.input.modelSelection.instanceId,
+              nativeThreadId: `${context.nativeThreadId}:task:${nativeTaskId}`,
+            });
+          const workflow: OrchestrationV2SubagentWorkflow = {
+            ...snapshot.workflow,
+            agents: snapshot.workflow.agents.map((member) => ({
+              ...member,
+              childThreadId: idAllocator.derive.subagentThread({
+                driver,
+                providerInstanceId: context.input.modelSelection.instanceId,
+                nativeThreadId: `${coordinatorThreadId}:agent:${member.label}`,
+              }),
+            })),
+          };
+          const results = workflow.agents.flatMap((member) =>
+            member.result === undefined ? [] : [`${member.label}: ${member.result}`],
+          );
+          yield* runtimeCallbackPermit.withPermit(
+            Effect.gen(function* () {
+              if (context.finalized) return;
+              // Members working on the board are the prompt's progress.
+              context.lastProgressAt = yield* Clock.currentTimeMillis;
+              yield* emitSubagent(context, {
+                nativeTaskId,
+                prompt: snapshot.prompt || snapshot.title,
+                title: snapshot.title,
+                model: null,
+                status: snapshot.active ? "running" : "completed",
+                childSessionId: null,
+                result: snapshot.active || results.length === 0 ? null : results.join("\n\n"),
+                workflow,
+              });
+              const coordinator = context.subagents.get(nativeTaskId);
+              if (coordinator !== undefined) {
+                yield* projectNativeWorkflowMembers(context, coordinator, workflow);
+              }
+              nativeWorkflowProjected.set(nativeTaskId, key);
+              yield* rearmDeferredFinalize(context);
+            }),
+          );
+          return true;
+        });
+
+        const watchNativeWorkflow = Effect.fnUntraced(function* (context: ActiveAcpTurn) {
+          if (
+            flavor.nativeWorkflow === undefined ||
+            context.nativeWorkflowWatching ||
+            context.finalized
+          ) {
+            return;
+          }
+          context.nativeWorkflowWatching = true;
+          yield* Effect.gen(function* () {
+            while (!context.finalized) {
+              const calls = context.nativeWorkflowCalls;
+              const exists = yield* syncNativeWorkflow(context);
+              yield* options.testHooks?.afterNativeWorkflowRead?.() ?? Effect.void;
+              const owns = [...context.subagents.values()].some(
+                (subagent) => subagent.task.workflow !== undefined,
+              );
+              if (calls === context.nativeWorkflowCalls && !context.nativeWorkflowRead) {
+                const waited = context.nativeWorkflowToolSeen || nativeWorkflowProjected.size > 0;
+                context.nativeWorkflowRead = true;
+                // The read held this turn open; it may settle now.
+                if (waited) yield* runtimeCallbackPermit.withPermit(rearmDeferredFinalize(context));
+              }
+              // A turn that never touched a native workflow stops looking once none exists; one
+              // that shows a workflow keeps looking until it settles, so it sees a recovery.
+              if (!exists && !context.nativeWorkflowToolSeen && !owns) return;
+              yield* Effect.sleep(ACP_NATIVE_WORKFLOW_POLL);
+            }
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                context.nativeWorkflowWatching = false;
+              }),
+            ),
+            Effect.ignore,
+            Effect.forkIn(sessionScope),
+          );
         });
 
         const nativeChild = (sessionId: string) => {
@@ -4350,6 +4782,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           ignoreTool?: (tool: AcpToolCallState) => boolean,
         ): boolean => {
           if (flavor.wakeOnDetachedRequest && agentRequests.size > 0) return true;
+          // A turn waits for the watch to read the agent's records after a native workflow call,
+          // and at its start once this session has one, so a swarm still at work holds it.
+          if (
+            (context.nativeWorkflowToolSeen || nativeWorkflowProjected.size > 0) &&
+            !context.nativeWorkflowRead
+          )
+            return true;
           if (flavor.toolOutlivesPrompt !== undefined) {
             // A tool that never started has nothing to report later.
             for (const tool of context.tools.values()) {
@@ -4389,8 +4828,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           if (flavor.subagentsOutlivingPrompt === undefined) return;
           const nativeTaskId = (subagent: ActiveAcpSubagent) =>
             subagent.task.nativeTaskRef?.nativeId ?? String(subagent.task.id);
-          const running = [...context.subagents.values()].filter((subagent) =>
-            acpSubagentStatusBlocksTurnSettlement(subagent.task.status),
+          // The native workflow watch owns its own status.
+          const running = [...context.subagents.values()].filter(
+            (subagent) =>
+              subagent.task.workflow === undefined &&
+              acpSubagentStatusBlocksTurnSettlement(subagent.task.status),
           );
           if (running.length === 0) return;
           const atWork = yield* flavor.subagentsOutlivingPrompt({
@@ -4654,6 +5096,18 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             }
           }
 
+          // A call that failed has no workflow to show its error, so it stays a tool row.
+          if (
+            flavor.nativeWorkflow?.isTool(toolCall) === true &&
+            toolStatus(toolCall.status) !== "failed"
+          ) {
+            context.nativeWorkflowCalls += 1;
+            context.nativeWorkflowToolSeen = true;
+            context.nativeWorkflowRead = false;
+            yield* watchNativeWorkflow(context);
+            yield* rearmDeferredFinalize(context);
+            return;
+          }
           // Monitor TaskOutput resembles subagent hydration; do not invent a subagent.
           const subagentUpdate = hydratedRegisteredMonitor
             ? undefined
@@ -9245,7 +9699,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             resolveAttachmentPath: host.resolveAttachmentPath,
             resolveExtractedTextPath: host.resolveExtractedTextPath,
           });
-          const isNativeSlashCommand = userText.trimStart().startsWith("/");
+          // A rewrite that keeps the user's message as the command's task (Antigravity's Swarm
+          // toggle) still carries the context and instructions that message would.
+          const isNativeSlashCommand = (
+            flavor.rewriteKeepsUserMessage === true ? turnInput.message.text : userText
+          )
+            .trimStart()
+            .startsWith("/");
           const attachmentBlocks = yield* promptAttachmentBlocks(
             messageText,
             turnInput.message.attachments,
@@ -9260,13 +9720,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             deliveredContext,
             isNativeSlashCommand,
           );
-          const text = t3AcpPromptWithInstructions({
-            prompt: messageText,
+          // A command a rewrite made keeps its first block; its instructions follow in another.
+          const commandFromRewrite = !isNativeSlashCommand && userText.trimStart().startsWith("/");
+          const wrapped = t3AcpPromptWithInstructions({
+            prompt: commandFromRewrite ? "" : messageText,
             state: instructionState,
             ...(previousInstructionState === undefined || compactionMarker !== undefined
               ? {}
               : { previousState: previousInstructionState }),
           });
+          const instructionsBlock = commandFromRewrite && wrapped !== "" ? wrapped : undefined;
+          const text = commandFromRewrite ? messageText : wrapped;
           const sessionSetup = yield* Ref.get(activeSessionSetup);
           const runtimeInstructions = buildRuntimeInstructions({
             agentFeedback: instructionState.hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
@@ -9293,19 +9757,25 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             });
           }
           if (appContextEntries.length > 0) {
-            prompt.unshift(
-              ...appContextEntries.map((entry) => ({
-                type: "text" as const,
-                text: formatAcpAppContextEntry(entry),
-              })),
-            );
+            const contextBlocks = appContextEntries.map((entry) => ({
+              type: "text" as const,
+              text: formatAcpAppContextEntry(entry),
+            }));
+            if (commandFromRewrite) prompt.push(...contextBlocks);
+            else prompt.unshift(...contextBlocks);
+          }
+          if (instructionsBlock !== undefined) {
+            prompt.push({ type: "text", text: instructionsBlock });
           }
           if (sendRuntimeInstructions) {
             prompt.push({ type: "text", text: runtimeInstructions });
           }
           return {
             prompt,
-            instructionState: text === messageText ? undefined : instructionState,
+            instructionState:
+              text === messageText && instructionsBlock === undefined
+                ? undefined
+                : instructionState,
             runtimeInstructions: sendRuntimeInstructions ? runtimeInstructions : undefined,
             appContextEntries,
             compactionMarker,
@@ -9848,6 +10318,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               nativePromptId: undefined,
               lastProgressAt: 0,
               inactivityWatchdog: undefined,
+              nativeWorkflowWatching: false,
+              nativeWorkflowToolSeen: false,
+              nativeWorkflowRead: false,
+              nativeWorkflowCalls: 0,
+              nativeWorkflowMembers: new Set(),
+              nativeWorkflowUnreadableSince: undefined,
+              nativeWorkflowChangedAt: undefined,
+              nativeWorkflowProgress: undefined,
             };
             const carryover = yield* Ref.getAndSet(carryoverSubagents, null);
             let rehydratedCarryoverSubagents: ReadonlyArray<ActiveAcpSubagent> = [];
@@ -9865,6 +10343,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             }
             yield* Ref.set(activeTurn, context);
             yield* Ref.set(stoppedRunQuarantine, false);
+            yield* watchNativeWorkflow(context);
             const runningTurn = providerTurnPayload(context, "running", null);
             yield* emitProviderEvent({
               type: "provider_turn.updated",

@@ -24,6 +24,8 @@ import { ListSection } from "../../components/ui/ListSection";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { cn } from "../../lib/cn";
 import { useEnvironmentServerConfig, useThreadShell } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
+import { threadFamilies } from "../../state/threads";
 import { SUBAGENT_TONE_TEXT_CLASS, SubagentStatusDot } from "./SubagentStatusDot";
 import { SubagentStopButton } from "./SubagentStopButton";
 import {
@@ -61,6 +63,15 @@ export function ThreadWorkflowGroup(props: {
   const open = rail.find((item) => item.key === selected);
   const label = group.workflow.workflowName ?? group.workflow.title;
   const statusLabel = resolveSubagentRowPresentation(props.subagent, false, m).statusLabel;
+  // The shell omits idle subagent threads. One read of the workflow's thread family carries
+  // every member's row, since members share the coordinator's root thread.
+  const coordinatorThreadId = props.subagent.childThreadId;
+  const family = useEnvironmentQuery(
+    open !== undefined && coordinatorThreadId !== null
+      ? threadFamilies.familyAtom(props.environmentId, ThreadId.make(coordinatorThreadId))
+      : null,
+  );
+  const familyThreadIds = new Set<string>(family.data?.threads.map((row) => row.id));
 
   return (
     <View className="my-2">
@@ -150,6 +161,7 @@ export function ThreadWorkflowGroup(props: {
               key={member.id}
               environmentId={props.environmentId}
               member={member}
+              inFamily={member.childThreadId !== null && familyThreadIds.has(member.childThreadId)}
               provider={provider}
               onOpen={props.onOpen}
             />
@@ -163,6 +175,7 @@ export function ThreadWorkflowGroup(props: {
 function WorkflowMemberRow(props: {
   readonly environmentId: EnvironmentId;
   readonly member: RuntimeSubagent;
+  readonly inFamily: boolean;
   readonly provider: ServerProvider | undefined;
   readonly onOpen: (threadId: ThreadId) => void;
 }) {
@@ -173,7 +186,7 @@ function WorkflowMemberRow(props: {
   const shell = useThreadShell(
     threadId === null ? null : scopeThreadRef(props.environmentId, threadId),
   );
-  const canOpen = threadId !== null && shell !== null;
+  const canOpen = threadId !== null && (shell !== null || props.inFamily);
   const presentation = resolveSubagentRowPresentation(
     {
       title: member.title,

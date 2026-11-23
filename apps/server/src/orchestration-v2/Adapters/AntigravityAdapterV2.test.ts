@@ -1364,6 +1364,7 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
   const usage = { sessionUpdate: "usage_update", used: 9000, size: 1048576 } as const;
   const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
   const scheduledFinalizes = yield* Queue.unbounded<Duration.Input>();
+  const workflowReads = yield* Queue.unbounded<void>();
   const instanceId = ProviderInstanceId.make("antigravity-wake-test");
   const threadId = ThreadId.make("thread-antigravity-wake");
   const selfInvocation = yield* resolveSelfInvocation();
@@ -1463,6 +1464,7 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
             : { continuationRequests: adapterOptions.continuationRequests }),
           testHooks: {
             onDeferredFinalizeScheduled: (debounce) => Queue.offer(scheduledFinalizes, debounce),
+            afterNativeWorkflowRead: () => Queue.offer(workflowReads, undefined),
           },
         });
   const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -1497,7 +1499,11 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
     runtimePolicy,
   });
   const now = yield* DateTime.now;
-  const startTurn = (ordinal: number, continuation: boolean) =>
+  const startTurn = (
+    ordinal: number,
+    continuation: boolean,
+    extra?: Pick<ProviderAdapter.ProviderAdapterV2TurnInput, "appContext" | "modelSelection">,
+  ) =>
     session.startTurn({
       appThread: {
         createdBy: "user",
@@ -1539,6 +1545,7 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
       },
       modelSelection,
       runtimePolicy,
+      ...extra,
     });
 
   return {
@@ -1548,6 +1555,7 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
     usage,
     offers,
     scheduledFinalizes,
+    workflowReads,
     send,
     startTurn,
     until,
@@ -1572,6 +1580,106 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
           new EffectAcpErrors.AcpTransportError({ detail: "agent exited", cause: "exit" }),
         ) ?? Effect.die("the adapter must watch its runtime"),
     ),
+  };
+});
+
+// Frames and files as agy 1.5.14 wrote them for `/swarm`: the coordinator's `swarm` calls
+// arrive as `Run swarm`, and workers report only on the board below its session.
+const openSwarmSession = Effect.fn("openSwarmSession")(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const profile = yield* fileSystem.makeTempDirectoryScoped({
+    prefix: "t3-antigravity-swarm-",
+  });
+  const brain = (conversationId: string, ...rest: ReadonlyArray<string>) =>
+    path.join(profile, "antigravity-acp", "brain", conversationId, ".system_generated", ...rest);
+  const writeLines = (file: string, values: ReadonlyArray<unknown>) =>
+    fileSystem
+      .makeDirectory(path.dirname(file), { recursive: true })
+      .pipe(
+        Effect.andThen(
+          fileSystem.writeFileString(
+            file,
+            values.map((value) => JSON.stringify(value)).join("\n") + "\n",
+          ),
+        ),
+      );
+  yield* fileSystem.makeDirectory(brain("mock-session-1", "swarm"), { recursive: true });
+  yield* fileSystem.writeFileString(
+    brain("mock-session-1", "swarm", "members.json"),
+    JSON.stringify({
+      title: "Compute 6*7",
+      members: {
+        coordinator: { conversation_id: "mock-session-1", role: "coordinator" },
+        "mul-a": { conversation_id: "worker-1", role: "worker", model: "gemini-test-low" },
+      },
+    }),
+  );
+  const brief = {
+    seq: 1,
+    agent: "coordinator",
+    text: "@mul-a Compute 6*7.",
+    time: "2026-11-23 17:23:18",
+    kind: "brief",
+  };
+  yield* writeLines(brain("mock-session-1", "swarm", "board.jsonl"), [brief]);
+  const transcript = brain("worker-1", "logs", "transcript.jsonl");
+  yield* writeLines(transcript, [
+    { step_index: 0, type: "SYSTEM_MESSAGE", status: "DONE" },
+    { step_index: 1, type: "PLANNER_RESPONSE", status: "DONE", tool_calls: [{ name: "x" }] },
+  ]);
+  const swarmCall = (toolCallId: string, rawInput: Record<string, unknown>) =>
+    ({
+      sessionUpdate: "tool_call",
+      toolCallId,
+      kind: "other",
+      title: "Run swarm",
+      status: "completed",
+      rawInput,
+    }) as const;
+  const opened = yield* openSessionWithRunningCommand({}, undefined, undefined, {
+    profileDirectory: profile,
+    initialToolCalls: [
+      swarmCall("call_title", { action: "title", title: "Compute 6*7" }),
+      swarmCall("call_add", { action: "add", name: "mul-a", brief: "Compute 6*7." }),
+    ],
+  });
+  const parked = [
+    { step_index: 0, type: "SYSTEM_MESSAGE", status: "DONE" },
+    {
+      step_index: 1,
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      tool_calls: [{ name: "post_message" }, { name: "swarm_wait" }],
+    },
+    { step_index: 2, type: "GENERIC", status: "DONE" },
+    { step_index: 3, type: "GENERIC", status: "DONE" },
+  ];
+  const workflows = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+    events.flatMap((event) =>
+      event.type === "subagent.updated" && event.subagent.workflow !== undefined
+        ? [event.subagent]
+        : [],
+    );
+  // The watch reads files off the test clock: step to its next poll and wait for that read.
+  const readAfterPoll = Effect.gen(function* () {
+    yield* Queue.clear(opened.workflowReads);
+    yield* TestClock.adjust("2 seconds");
+    yield* Queue.take(opened.workflowReads);
+  });
+  return {
+    ...opened,
+    readAfterPoll,
+    brain,
+    brief,
+    transcript,
+    writeLines,
+    swarmCall,
+    parked,
+    workflows,
+    board: brain("mock-session-1", "swarm", "board.jsonl"),
+    roster: brain("mock-session-1", "swarm", "members.json"),
+    fileSystem,
   };
 });
 
@@ -2425,6 +2533,248 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       yield* startTurn(2, true);
       yield* TestClock.adjust("3 seconds");
       const terminal = (yield* throughTerminal).at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("shows a swarm as one workflow that runs until its workers park", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, throughPromptSettled, scheduledFinalizes, send, workflows } = swarm;
+      yield* startTurn(1, false);
+      const settled = yield* throughPromptSettled;
+      // The first board read can land before or after the reply settles.
+      const prompt =
+        workflows(settled).length > 0
+          ? settled
+          : [...settled, ...(yield* until((event) => workflows([event]).length > 0))];
+      const running = workflows(prompt).at(-1);
+      assert.equal(running?.status, "running");
+      assert.equal(running?.workflow?.name, "Compute 6*7");
+      assert.deepEqual(
+        running?.workflow?.agents.map(({ label, state, prompt: brief }) => [label, state, brief]),
+        [["mul-a", "running", "Compute 6*7."]],
+      );
+      assert.isFalse(
+        JSON.stringify(prompt).includes("Run swarm"),
+        "swarm calls fold into the workflow instead of showing as tools",
+      );
+      assert.isTrue(
+        prompt.some(
+          (event) =>
+            event.type === "message.updated" &&
+            event.message.threadId === running?.childThreadId &&
+            event.message.workflowScript === true,
+        ),
+        "the swarm's thread opens on its plan, like a workflow",
+      );
+
+      yield* swarm.writeLines(swarm.board, [
+        swarm.brief,
+        { seq: 2, agent: "mul-a", text: "@coordinator [done] 42", time: "2026-11-23 17:23:21" },
+      ]);
+      yield* swarm.writeLines(swarm.transcript, swarm.parked);
+      // One poll reads the parked worker; the idle swarm then schedules the turn's end.
+      yield* TestClock.adjust("2 seconds");
+      const parkedRun = yield* until((event) => workflows([event]).at(-1)?.status === "completed");
+      yield* Queue.take(scheduledFinalizes);
+      yield* TestClock.adjust("5 seconds");
+      const run = [...parkedRun, ...(yield* until((event) => event.type === "turn.terminal"))];
+      const terminal = run.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+      const done = workflows(run).at(-1);
+      assert.equal(done?.status, "completed");
+      assert.deepEqual(
+        done?.workflow?.agents.map(({ state, result }) => [state, result]),
+        [["completed", "@coordinator [done] 42"]],
+      );
+      const memberThread = done?.workflow?.agents[0]?.childThreadId;
+      assert.isTrue(
+        run.some(
+          (event) =>
+            event.type === "message.updated" &&
+            event.message.threadId === memberThread &&
+            event.message.text === "@coordinator [done] 42",
+        ),
+        "the worker's result reaches its own thread",
+      );
+
+      // A later turn that checks on the swarm takes its card and announces its worker threads,
+      // so that run routes their updates.
+      yield* startTurn(2, false);
+      yield* send(swarm.swarmCall("call_status", { action: "status" }));
+      const later = yield* until((event) => workflows([event]).length > 0);
+      assert.equal(workflows(later).at(-1)?.runId, "run-antigravity-wake-2");
+      const announced = yield* until(
+        (event) => event.type === "app_thread.created" && event.appThread.id === memberThread,
+      );
+      assert.isNotEmpty(announced);
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("the Swarm toggle sends a plain message as /swarm with its app context", () =>
+    Effect.gen(function* () {
+      const opened = yield* openSessionWithRunningCommand({});
+      yield* opened.startTurn(1, false, {
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("antigravity-wake-test"),
+          model: "gemini-test-low",
+          options: [{ id: "swarm", value: true }],
+        },
+        appContext: [{ key: "mcp_app_item-1", text: "Created Jira issue PROJ-42" }],
+      });
+      yield* opened.throughPromptSettled;
+      const sent = opened.prompts[0]!.prompt.flatMap((block) =>
+        block.type === "text" ? [block.text] : [],
+      );
+      assert.isTrue(
+        sent.some((text) => text.startsWith("/swarm chart the throughput")),
+        "the message runs as a swarm",
+      );
+      assert.isTrue(
+        sent.some((text) => text.includes("Created Jira issue PROJ-42")),
+        "the swarm gets the context the plain message would",
+      );
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("rewrites the swarm's plan when briefs arrive after its title", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, workflows } = swarm;
+      yield* swarm.writeLines(swarm.board, []);
+      yield* startTurn(1, false);
+      const plan = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+        events.flatMap((event) =>
+          event.type === "message.updated" && event.message.workflowScript === true
+            ? [event.message.text]
+            : [],
+        );
+      const first = yield* until((event) => plan([event]).length > 0);
+      assert.equal(plan(first).at(-1), "Compute 6*7");
+      yield* swarm.writeLines(swarm.board, [swarm.brief]);
+      yield* TestClock.adjust("2 seconds");
+      const rewritten = yield* until((event) => plan([event]).length > 0);
+      assert.equal(plan(rewritten).at(-1), "@mul-a Compute 6*7.");
+      // A brief that scrolls out of the board's tail stays on the plan and the worker.
+      yield* swarm.writeLines(swarm.board, []);
+      yield* swarm.writeLines(swarm.transcript, [
+        ...swarm.parked.slice(0, 1),
+        {
+          step_index: 1,
+          type: "PLANNER_RESPONSE",
+          status: "DONE",
+          input_tokens: 5,
+          tool_calls: [{ name: "y" }],
+        },
+      ]);
+      yield* TestClock.adjust("2 seconds");
+      const kept = yield* until((event) => workflows([event]).at(-1)?.workflow?.totalTokens === 5);
+      assert.equal(workflows(kept).at(-1)?.prompt, "@mul-a Compute 6*7.");
+      assert.equal(workflows(kept).at(-1)?.workflow?.agents[0]?.prompt, "Compute 6*7.");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("a turn after Stop waits for a swarm still at work, through unreadable polls", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, workflows, fileSystem, session, providerThread } = swarm;
+      yield* startTurn(1, false);
+      const started = yield* until((event) => workflows([event]).at(-1)?.status === "running");
+      const turn = started.find((event) => event.type === "provider_turn.updated");
+      if (turn?.type !== "provider_turn.updated") return assert.fail("the turn must start");
+      yield* session.interruptTurn({ providerThread, providerTurnId: turn.providerTurn.id });
+      yield* until((event) => event.type === "turn.terminal");
+      // Turn 2 makes no swarm call; the workers still work, so the turn stays open.
+      yield* startTurn(2, false);
+      yield* swarm.releaseSteer;
+      yield* until((event) => workflows([event]).at(-1)?.runId === "run-antigravity-wake-2");
+      // One unreadable poll must not end the watch while the swarm holds the turn.
+      const roster = yield* fileSystem.readFileString(swarm.roster);
+      yield* fileSystem.writeFileString(swarm.roster, "{");
+      yield* swarm.readAfterPoll;
+      yield* fileSystem.writeFileString(swarm.roster, roster);
+      yield* swarm.writeLines(swarm.transcript, swarm.parked);
+      yield* TestClock.adjust("2 seconds");
+      yield* until((event) => workflows([event]).at(-1)?.status === "completed");
+      yield* Queue.take(swarm.scheduledFinalizes);
+      yield* TestClock.adjust("5 seconds");
+      const terminal = (yield* until((event) => event.type === "turn.terminal")).at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("a worker still adding steps keeps holding the turn past the stall limit", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, workflows } = swarm;
+      yield* startTurn(1, false);
+      yield* until((event) => workflows([event]).at(-1)?.status === "running");
+      // Each step leaves the shown workflow unchanged, but proves the worker is at work.
+      for (const step of [2, 3]) {
+        yield* swarm.writeLines(swarm.transcript, [
+          ...swarm.parked.slice(0, 1),
+          { step_index: 1, type: "PLANNER_RESPONSE", status: "DONE", tool_calls: [{ name: "x" }] },
+          { step_index: step, type: "GENERIC", status: "DONE" },
+        ]);
+        yield* TestClock.adjust("8 minutes");
+        yield* swarm.readAfterPoll;
+      }
+      yield* swarm.writeLines(swarm.transcript, swarm.parked);
+      yield* swarm.readAfterPoll;
+      const done = yield* until((event) => workflows([event]).length > 0);
+      assert.equal(workflows(done).at(-1)?.status, "completed", "the swarm finished, not stalled");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("a swarm whose records stop changing stops holding the turn", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, workflows } = swarm;
+      yield* startTurn(1, false);
+      yield* until((event) => workflows([event]).at(-1)?.status === "running");
+      // A worker whose transcript cannot be read stays queued with nothing on the board changing.
+      yield* swarm.readAfterPoll;
+      yield* TestClock.adjust("15 minutes");
+      yield* swarm.readAfterPoll;
+      yield* until((event) => workflows([event]).at(-1)?.status === "idle");
+      yield* TestClock.adjust("5 seconds");
+      const terminal = (yield* until((event) => event.type === "turn.terminal")).at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("a swarm whose records stay unreadable stops holding the turn", () =>
+    Effect.gen(function* () {
+      const swarm = yield* openSwarmSession();
+      const { startTurn, until, workflows, fileSystem } = swarm;
+      yield* startTurn(1, false);
+      yield* until((event) => workflows([event]).at(-1)?.status === "running");
+      const roster = yield* fileSystem.readFileString(swarm.roster);
+      yield* fileSystem.writeFileString(swarm.roster, "{");
+      // The first unreadable read starts the minute; one a minute later ends it.
+      yield* swarm.readAfterPoll;
+      yield* TestClock.adjust("59 seconds");
+      yield* swarm.readAfterPoll;
+      const released = yield* until(
+        (event) =>
+          event.type === "subagent.updated" &&
+          event.subagent.title === "mul-a" &&
+          event.subagent.status === "idle",
+      );
+      assert.equal(workflows(released).at(-1)?.status, "idle");
+      // Records readable again with the worker still at work bring the hold back, keeping the
+      // brief that has since left the board's tail.
+      yield* fileSystem.writeFileString(swarm.roster, roster);
+      yield* swarm.writeLines(swarm.board, []);
+      yield* TestClock.adjust("2 seconds");
+      const resumed = yield* until((event) => workflows([event]).at(-1)?.status === "running");
+      assert.equal(workflows(resumed).at(-1)?.prompt, "@mul-a Compute 6*7.");
+      yield* swarm.writeLines(swarm.transcript, swarm.parked);
+      yield* TestClock.adjust("2 seconds");
+      yield* until((event) => workflows([event]).at(-1)?.status === "completed");
+      yield* TestClock.adjust("5 seconds");
+      const terminal = (yield* until((event) => event.type === "turn.terminal")).at(-1);
       assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
     }).pipe(Effect.provide(layerSession)),
   );
