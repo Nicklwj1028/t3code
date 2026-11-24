@@ -1991,6 +1991,9 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.mergedBy ? { mergedBy: changeRequest.mergedBy } : {}),
             closedAt: changeRequest.closedAt,
             reviewers: changeRequest.reviewers,
+            ...(changeRequest.reviewDecision === undefined
+              ? {}
+              : { reviewDecision: changeRequest.reviewDecision }),
             labels: changeRequest.labels,
             checks: changeRequest.checks,
             mergeCapabilities: changeRequest.mergeCapabilities,
