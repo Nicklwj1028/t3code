@@ -10229,73 +10229,73 @@
   "c60bd348673c77c3": "Wątki na pasku bocznym bez aktywności przez ten czas są dokańczane automatycznie.",
   "1f17e629add0ec32": "Zresetuj automatyczne dokańczanie do domyślnego",
   "a493648aceb375c9": "Każda nowa aktywność automatycznie przywraca wątek.",
-  "daa0cf9a5aec4bc5": "Inactivity does not settle threads with a pull request. Merge and close still do.",
-  "89416dc66d40ef67": "Text generation",
-  "08fcdecfd4fd11ec": "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
-  "6c72064a8b709f24": "Reset text generation model to default",
-  "6560b4e16da91b06": "Text generation model not saved",
-  "9aa7262bf9fbe4ad": "The selected targets use different streaming modes.",
-  "6d906218686b3dd9": "Reset response streaming to default",
-  "e48e93f44d89ea86": "Updates",
-  "e6267e91cd042010": "Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear.",
-  "2bc0086d479dff21": "Reset provider update checks to default",
-  "615928bec4a7836f": "Check provider versions",
-  "4cae745392800cef": "Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments.",
-  "cba23f294948120b": "All selected connected environments must support restart continuation.",
-  "6febe9cf5aaf097b": "Reset continue threads after restarts to default",
-  "8d8e7e07dbcf1f8d": "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.",
-  "b5c1ee7965c5561d": "Reset keep awake while agents work to default",
-  "8f0f33564b6f67d3": "Inspect processes, resource use, and logs on this environment.",
-  "414e240899c5f148": "Inspect processes, resource use, and logs on one environment at a time.",
-  "6ebd73c7bfb58bb7": "App",
-  "6939d310de8dfe5b": "Organization",
-  "c424bee294b9f778": "This environment is managed by {organization}. Some settings and features follow its policy.",
-  "82d9538af590f58c": "See your agents, import projects, and set up your phone.",
-  "6a48fd0a37e725a1": "Legal",
-  "d6d3ea46ac979e1c": "How we handle your data, including the anonymous usage data T3 Code collects.",
-  "e741b1ab9396053a": "How we handle your data. {telemetryOff}",
-  "0bffbbf4d7f780c0": "Notices for dependencies, assets, and optional tools used by T3 Code.",
-  "e39a57514be028e9": "Review",
+  "daa0cf9a5aec4bc5": "Bezczynność nie dokańcza wątków z pull requestem. Scalanie i zamykanie nadal to robią.",
+  "89416dc66d40ef67": "Generowanie tekstu",
+  "08fcdecfd4fd11ec": "Do tytułów wątków i innego generowanego tekstu. Kontrola wersji ma własne ustawienie. Generatory tekstu z sekcji Dostawcy też się tu pojawiają.",
+  "6c72064a8b709f24": "Zresetuj model generowania tekstu do domyślnego",
+  "6560b4e16da91b06": "Nie zapisano modelu generowania tekstu",
+  "9aa7262bf9fbe4ad": "Wybrane cele używają różnych trybów streamowania.",
+  "6d906218686b3dd9": "Zresetuj streamowanie odpowiedzi do domyślnego",
+  "e48e93f44d89ea86": "Aktualizacje",
+  "e6267e91cd042010": "Sprawdzaj, czy dla zainstalowanych CLI dostawców są nowsze wersje, i pobieraj aktualizacje katalogu modeli. Gdy wyłączone, nowe modele mogą się nie pojawiać.",
+  "2bc0086d479dff21": "Zresetuj sprawdzanie aktualizacji dostawców do domyślnego",
+  "615928bec4a7836f": "Sprawdzaj wersje dostawców",
+  "4cae745392800cef": "Automatycznie wznawiaj przerwane wątki po aktualizacji, awarii lub restarcie komputera na wybranych środowiskach.",
+  "cba23f294948120b": "Wszystkie wybrane połączone środowiska muszą obsługiwać kontynuację po restarcie.",
+  "6febe9cf5aaf097b": "Zresetuj kontynuowanie wątków po restartach do domyślnego",
+  "8d8e7e07dbcf1f8d": "Nie pozwalaj komputerowi przechodzić w tryb uśpienia, gdy agenci pracują, i pozwól mu zasnąć po ich zakończeniu. Zamknięcie pokrywy laptopa nadal go usypia.",
+  "b5c1ee7965c5561d": "Zresetuj nieusypianie podczas pracy agentów do domyślnego",
+  "8f0f33564b6f67d3": "Sprawdzaj procesy, użycie zasobów i logi w tym środowisku.",
+  "414e240899c5f148": "Sprawdzaj procesy, użycie zasobów i logi w jednym środowisku naraz.",
+  "6ebd73c7bfb58bb7": "Aplikacja",
+  "6939d310de8dfe5b": "Organizacja",
+  "c424bee294b9f778": "To środowisko jest zarządzane przez {organization}. Niektóre ustawienia i funkcje podlegają jej zasadom.",
+  "82d9538af590f58c": "Zobacz swoje agenty, zaimportuj projekty i skonfiguruj telefon.",
+  "6a48fd0a37e725a1": "Informacje prawne",
+  "d6d3ea46ac979e1c": "Jak przetwarzamy Twoje dane, w tym anonimowe dane użycia zbierane przez T3 Code.",
+  "e741b1ab9396053a": "Jak przetwarzamy Twoje dane. {telemetryOff}",
+  "0bffbbf4d7f780c0": "Uwagi o zależnościach, zasobach i opcjonalnych narzędziach używanych przez T3 Code.",
+  "e39a57514be028e9": "Przegląd",
   "7c0512387c3a42ea": "Stable",
   "3476687eaa175b32": "Nightly",
-  "0dde92a0e2d0258a": "Latest",
-  "cbf6a6bbc17e75e1": "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
-  "83ca942c7163904f": "Combine matching repositories across environments.",
-  "609da998ca13521e": "Order of projects in the sidebar project picker and command palette.",
-  "b4c541137a76b351": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.",
-  "e815f49e5abedcfd": "Ask before unpinning a thread from the pinned section.",
-  "41210f99adeeba78": "Require a second click on the inline archive action before a thread is archived.",
-  "84f3d2cefc8d2a74": "Ask before deleting a thread and its chat history.",
-  "ca169211b232a6c4": "Ask before closing terminals and stopping their running processes.",
-  "3fc130f1e8170073": "Hold mode also quits on two quick presses.",
-  "72c7fda6ae301e6d": "System default follows your browser or OS language.",
-  "b9ebecdb8db71466": "System default follows your browser or OS clock preference.",
-  "62f8a7774dc1ffb7": "Queue",
-  "c711b55bc1500f08": "Steer",
-  "e79128045796685d": "Side panel",
-  "d81dc62319ba223e": "Main view",
-  "54139af0114a2729": "Red & green (default)",
-  "8d4a851d370639e4": "Blue & orange",
-  "b1d7c1ea891b7db5": "Expanded",
-  "6dcf585837a9d861": "Collapsed",
-  "126a28a1ad4b2d57": "Connect an environment to choose its text generation model.",
-  "5fe5a45199fa9c07": "No text generation providers available.",
-  "99ceba64591c9257": "View diagnostics",
-  "eb576a5feda7b535": "Open",
-  "66647e8c8123a51f": "View policy",
-  "6d59e1e516e53d17": "View licenses",
-  "941d08db15f62d17": "Archived",
-  "e122b2428c0d03a5": "Open all environments",
-  "484e14e77577d042": "Environment scope",
-  "3c2a43018b7c4901": "No environments",
-  "8a6691c39f4cb27a": "All environments",
-  "716dbf1991e36144": "Search environments",
-  "f61dcf47eafa98d4": "Checkout scope",
-  "d353a1a3cf3b5c29": "Unavailable checkout",
-  "573ea5fdf293a9d6": "All checkouts",
-  "470ad8c54049d1e1": "Search checkouts",
-  "7e2dfdd9f97fc027": "Project scope",
-  "1cf216566c1ee064": "Unavailable project",
+  "0dde92a0e2d0258a": "Najnowsza",
+  "cbf6a6bbc17e75e1": "Pokazuj powiadomienie, gdy inny wątek kończy się, kończy się niepowodzeniem lub wymaga danych wejściowych lub zatwierdzenia, gdy ta aplikacja ma fokus.",
+  "83ca942c7163904f": "Łącz pasujące repozytoria między środowiskami.",
+  "609da998ca13521e": "Kolejność projektów w selektorze projektów na pasku bocznym i palecie poleceń.",
+  "b4c541137a76b351": "Zwiń wątki robocze i monitorowane do sekcji roboczej. Wracają na górę skrzynki odbiorczej, gdy potrzebują Cię. Nudny pasek boczny w Laboratorium nie ma sekcji roboczej.",
+  "e815f49e5abedcfd": "Pytaj przed odpięciem wątku z sekcji przypiętych.",
+  "41210f99adeeba78": "Wymagaj drugiego kliknięcia akcji archiwizacji w wierszu, zanim wątek zostanie zarchiwizowany.",
+  "84f3d2cefc8d2a74": "Pytaj przed usunięciem wątku i jego historii czatu.",
+  "ca169211b232a6c4": "Pytaj przed zamknięciem terminali i zatrzymaniem ich działających procesów.",
+  "3fc130f1e8170073": "Tryb przytrzymania także wyłącza przy dwóch szybkich naciśnięciach.",
+  "72c7fda6ae301e6d": "Domyślne ustawienie systemowe podąża za językiem przeglądarki lub systemu.",
+  "b9ebecdb8db71466": "Domyślne ustawienie systemowe podąża za preferencją zegara przeglądarki lub systemu.",
+  "62f8a7774dc1ffb7": "Kolejkuj",
+  "c711b55bc1500f08": "Steruj",
+  "e79128045796685d": "Panel boczny",
+  "d81dc62319ba223e": "Widok główny",
+  "54139af0114a2729": "Czerwony i zielony (domyślne)",
+  "8d4a851d370639e4": "Niebieski i pomarańczowy",
+  "b1d7c1ea891b7db5": "Rozwinięte",
+  "6dcf585837a9d861": "Zwinięte",
+  "126a28a1ad4b2d57": "Połącz środowisko, aby wybrać jego model generowania tekstu.",
+  "5fe5a45199fa9c07": "Brak dostępnych dostawców generowania tekstu.",
+  "99ceba64591c9257": "Wyświetl diagnostykę",
+  "eb576a5feda7b535": "Otwórz",
+  "66647e8c8123a51f": "Wyświetl politykę",
+  "6d59e1e516e53d17": "Wyświetl licencje",
+  "941d08db15f62d17": "Zarchiwizowane",
+  "e122b2428c0d03a5": "Otwórz wszystkie środowiska",
+  "484e14e77577d042": "Zakres środowisk",
+  "3c2a43018b7c4901": "Brak środowisk",
+  "8a6691c39f4cb27a": "Wszystkie środowiska",
+  "716dbf1991e36144": "Szukaj środowisk",
+  "f61dcf47eafa98d4": "Zakres checkoutów",
+  "d353a1a3cf3b5c29": "Niedostępny checkout",
+  "573ea5fdf293a9d6": "Wszystkie checkouty",
+  "470ad8c54049d1e1": "Szukaj checkoutów",
+  "7e2dfdd9f97fc027": "Zakres projektów",
+  "1cf216566c1ee064": "Niedostępny projekt",
   "c1b8c351aa90f319": [
     {
       "t": "span",
@@ -10304,7 +10304,7 @@
         {
           "t": "span",
           "i": 2,
-          "c": "Applying settings for"
+          "c": "Stosowanie ustawień dla"
         },
         {
           "i": 3,
@@ -10320,7 +10320,7 @@
         {
           "t": "span",
           "i": 5,
-          "c": "on"
+          "c": "na"
         },
         {
           "i": 6,
@@ -10336,7 +10336,7 @@
         {
           "t": "span",
           "i": 8,
-          "c": "in"
+          "c": "w"
         },
         {
           "i": 9,
@@ -10354,7 +10354,7 @@
         {
           "t": "span",
           "i": 2,
-          "c": "Applying settings for"
+          "c": "Stosowanie ustawień dla"
         },
         {
           "i": 3,
@@ -10370,7 +10370,7 @@
         {
           "t": "span",
           "i": 5,
-          "c": "on"
+          "c": "na"
         },
         {
           "i": 6,
@@ -10388,7 +10388,7 @@
         {
           "t": "span",
           "i": 2,
-          "c": "Applying settings for"
+          "c": "Stosowanie ustawień dla"
         },
         {
           "i": 3,
@@ -10404,7 +10404,7 @@
         {
           "t": "span",
           "i": 5,
-          "c": "across"
+          "c": "na"
         },
         {
           "i": 6,
@@ -10420,7 +10420,7 @@
         {
           "t": "span",
           "i": 8,
-          "c": "in"
+          "c": "w"
         },
         {
           "i": 9,
@@ -10438,7 +10438,7 @@
         {
           "t": "span",
           "i": 2,
-          "c": "Applying settings for"
+          "c": "Stosowanie ustawień dla"
         },
         {
           "i": 3,
@@ -10454,7 +10454,7 @@
         {
           "t": "span",
           "i": 5,
-          "c": "across"
+          "c": "na"
         },
         {
           "i": 6,
@@ -10464,25 +10464,25 @@
       ]
     }
   ],
-  "a8c2b705bbb43a80": "No matches found.",
-  "425f7ce2f24cb248": "Settings sections",
-  "ee3e8bd8b7918aec": "Search",
-  "858561b97fdd72f2": "Search settings",
-  "fed2d32de2b0c566": "Clear settings search",
-  "833639e235c97484": "Settings search results",
-  "be82bbfef472ab44": "No settings found",
-  "4e811ba442250819": "Add Simlock host",
-  "0c9fe2452393d9d1": "Edit Simlock host",
-  "184e65faa37982d1": "Each selected environment's server leases devices from your Simlock gateway with its own agent token, and releases them when they close.",
-  "2f97b7a79056ac40": "The environment's server leases devices from your Simlock gateway and releases them when they close.",
-  "943a5c361f1c7dfd": "Agent token · {label}",
-  "fbf34edfc46f8720": "Agent token",
-  "564c073d97e860d9": "Devices at once",
-  "b8952a33c47e0d80": "Lease minutes",
-  "00bbdee334d36f89": "A lease ends after the lease minutes even while in use.",
-  "ab1e58615fdcde6a": "A lease ends after the lease minutes even while in use. Saving restarts this host, which releases its devices.",
-  "c8aeee3a7cb590dc": "Using this machine's agent-device token ({signedInAs}).",
-  "dfb6fb6533b364ec": "Accepted as {signedInAs}.",
+  "a8c2b705bbb43a80": "Nie znaleziono dopasowań.",
+  "425f7ce2f24cb248": "Sekcje ustawień",
+  "ee3e8bd8b7918aec": "Szukaj",
+  "858561b97fdd72f2": "Szukaj w ustawieniach",
+  "fed2d32de2b0c566": "Wyczyść wyszukiwanie ustawień",
+  "833639e235c97484": "Wyniki wyszukiwania ustawień",
+  "be82bbfef472ab44": "Nie znaleziono ustawień",
+  "4e811ba442250819": "Dodaj hosta Simlock",
+  "0c9fe2452393d9d1": "Edytuj hosta Simlock",
+  "184e65faa37982d1": "Serwer każdego wybranego środowiska dzierżawi urządzenia z Twojej bramy Simlock na własny token agenta i zwalnia je po ich zamknięciu.",
+  "2f97b7a79056ac40": "Serwer tego środowiska dzierżawi urządzenia z Twojej bramy Simlock i zwalnia je po ich zamknięciu.",
+  "943a5c361f1c7dfd": "Token agenta · {label}",
+  "fbf34edfc46f8720": "Token agenta",
+  "564c073d97e860d9": "Urządzenia naraz",
+  "b8952a33c47e0d80": "Minuty dzierżawy",
+  "00bbdee334d36f89": "Dzierżawa kończy się po podanych minutach, nawet podczas użytkowania.",
+  "ab1e58615fdcde6a": "Dzierżawa kończy się po podanych minutach, nawet podczas użytkowania. Zapisanie restartuje tego hosta, co zwalnia jego urządzenia.",
+  "c8aeee3a7cb590dc": "Użycie tokenu agent-urządzenia tego komputera ({signedInAs}).",
+  "dfb6fb6533b364ec": "Zaakceptowano jako {signedInAs}.",
   "559c94e83ecc754a": "Clear agent token",
   "5e2462b7cffbb1ec": "Gateway URL",
   "421783b2de6419f4": [
