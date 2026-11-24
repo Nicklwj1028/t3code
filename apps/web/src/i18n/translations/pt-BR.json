@@ -12862,5 +12862,10 @@
   "f6a91589456cca50": "Aprovado",
   "c92657bb7f2293ff": "Precisa de aprovação",
   "f1e5c1be1ac92361": "Aprovar",
-  "fcb5f3c4d4753326": "Esta conexão não pode aprovar comandos. Use um cliente que possa usar o terminal."
+  "fcb5f3c4d4753326": "Esta conexão não pode aprovar comandos. Use um cliente que possa usar o terminal.",
+  "e2e33c27c4a3af4c": "Buscar repositório...",
+  "b781f558378592af": "Nenhum repositório correspondente.",
+  "18ed3e1af363c529": "Repositório do espaço de trabalho",
+  "332d417f22d1e83e": "A detecção atingiu o limite de repositórios.",
+  "9bdaf65c667dedf2": "Revisar o repositório da conversa"
 }

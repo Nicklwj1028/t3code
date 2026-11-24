@@ -12,6 +12,7 @@ import {
   type ClientSettings,
   type OrchestrationGetTurnDiffResult,
   type ReviewBranchCommitsResult,
+  type ReviewRepositoriesResult,
   type ReviewDiffPreviewResult,
   type ReviewDiffPreviewSource,
   type ScopedThreadRef,
@@ -33,10 +34,12 @@ const state = vi.hoisted(() => ({
   thread: null as ReturnType<typeof makeThreadFixture> | null,
   threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
+  repositoryPreviews: new Map<string, ResultAtom<ReviewDiffPreviewResult>>(),
   patch: null as unknown as ResultAtom<ReviewDiffPreviewSource>,
   diffFilesCollapsed: false,
   project: {
     workspaceRoot: "/project",
+    trackedFolders: [] as string[],
     repositoryIdentity: null as { rootPath: string } | null,
   },
   toolCallItem: null as unknown,
@@ -44,7 +47,9 @@ const state = vi.hoisted(() => ({
   status: null as unknown as ResultAtom<VcsStatusResult>,
   localRefs: null as unknown as ResultAtom<VcsListRefsResult>,
   remoteRefs: null as unknown as ResultAtom<VcsListRefsResult>,
+  repositories: null as unknown as ResultAtom<ReviewRepositoriesResult>,
   commits: null as unknown as ResultAtom<ReviewBranchCommitsResult>,
+  taskFolder: null as unknown as ResultAtom<unknown>,
   checkpoints: [] as unknown[],
   checkpointDiff: null as Partial<OrchestrationGetTurnDiffResult> | null,
 }));
@@ -54,8 +59,9 @@ vi.mock("~/state/server", () => ({
 }));
 vi.mock("~/state/review", () => ({
   reviewEnvironment: {
-    diffPreview: ({ input }: { input: { baseRef?: string } }) =>
-      state.previews.get(input.baseRef ?? null)!,
+    diffPreview: ({ input }: { input: { cwd: string; baseRef?: string } }) =>
+      state.repositoryPreviews.get(input.cwd) ?? state.previews.get(input.baseRef ?? null)!,
+    repositories: () => state.repositories,
     branchCommits: () => state.commits,
     diffFilePatch: () => state.patch,
     diffFileContents: {},
@@ -77,7 +83,7 @@ vi.mock("~/state/entities", () => ({
 }));
 vi.mock("~/state/filesystem", () => ({
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),
-  filesystemEnvironment: {},
+  filesystemEnvironment: { taskFolder: () => state.taskFolder },
 }));
 vi.mock("~/hooks/useThreadRouteTarget", () => ({ useThreadRouteRef: () => state.threadRef }));
 vi.mock("~/hooks/useSettings", () => ({
@@ -140,14 +146,16 @@ function setup(failedBaseRef: string | null) {
     useDiffPanelStore.setState({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      repositoryCwdByThreadKey: {},
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
     useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   };
   reset();
   state.diffFilesCollapsed = false;
-  state.project = { workspaceRoot: "/project", repositoryIdentity: null };
+  state.project = { workspaceRoot: "/project", trackedFolders: [], repositoryIdentity: null };
   state.toolCallItem = null;
+  state.taskFolder = Atom.make(AsyncResult.initial());
   state.checkpoints = [];
   state.checkpointDiff = null;
   const patch = Atom.make<AsyncResult.AsyncResult<ReviewDiffPreviewSource, Error>>(
@@ -166,9 +174,11 @@ function setup(failedBaseRef: string | null) {
     worktreePath: cwd,
   });
   state.previews.clear();
+  state.repositoryPreviews.clear();
   state.previews.set(null, Atom.make(AsyncResult.success(preview())));
   state.previews.set("main", Atom.make(AsyncResult.success(preview())));
   state.previews.set(failedBaseRef, Atom.make(AsyncResult.fail(new Error(errorMessage))));
+  state.repositories = Atom.make(AsyncResult.success({ repositories: [], truncated: false }));
   state.config = Atom.make(null);
   state.status = Atom.make(
     AsyncResult.success({
@@ -322,6 +332,94 @@ it.each([false, true])(
   },
 );
 
+it("switches Changes between the workspace and an initialized submodule", async () => {
+  using context = setup("main");
+  const childCwd = `${cwd}/packages/auth`;
+  state.repositories = Atom.make(
+    AsyncResult.success({
+      repositories: [
+        { cwd, name: "workspace", path: "", branch: "dev" },
+        { cwd: childCwd, name: "auth", path: "packages/auth", branch: "fix-auth" },
+      ],
+      truncated: false,
+    }),
+  );
+  const childPreview = preview();
+  state.repositoryPreviews.set(
+    childCwd,
+    Atom.make(
+      AsyncResult.success({
+        ...childPreview,
+        cwd: childCwd,
+        sources: childPreview.sources.map((source) => ({ ...source, baseRef: "auth-base" })),
+      }),
+    ),
+  );
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Repository: Project folder: dev" }));
+  await userEvent.click(page.getByRole("option", { name: /auth: fix-auth/ }));
+  await expect
+    .element(screen.getByRole("combobox", { name: "Repository: auth: fix-auth" }))
+    .toBeVisible();
+  await expect.element(screen.getByLabelText("Comparing dev against auth-base")).toBeVisible();
+  expect(
+    useDiffPanelStore.getState().branchBaseRefByThreadKey[scopedThreadKey(context.threadRef)],
+  ).toBeNull();
+});
+
+it("keeps the loading state while a saved repository is still being discovered", async () => {
+  using context = setup(null);
+  state.repositories = Atom.make(AsyncResult.initial(true));
+  useDiffPanelStore.getState().selectRepository(context.threadRef, `${cwd}/packages/auth`);
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await expect.element(screen.getByRole("status", { name: "Loading changes..." })).toBeVisible();
+});
+
+it("shows a failed repository discovery instead of the workspace diff", async () => {
+  using context = setup(null);
+  state.repositories = Atom.make(AsyncResult.fail(new Error("discovery failed")));
+  useDiffPanelStore.getState().selectRepository(context.threadRef, `${cwd}/packages/auth`);
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await expect.element(screen.getByText("discovery failed", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Review the thread's repository" }));
+  await expect
+    .element(screen.getByText("discovery failed", { exact: true }))
+    .not.toBeInTheDocument();
+  expect(
+    useDiffPanelStore.getState().repositoryCwdByThreadKey[scopedThreadKey(context.threadRef)],
+  ).toBeUndefined();
+});
+
+it("preserves a saved tracked repository when its folder list cannot load", async () => {
+  using context = setup(null);
+  state.project.trackedFolders = ["/tracked"];
+  state.taskFolder = Atom.make(AsyncResult.fail(new Error("task folder query failed")));
+  const key = scopedThreadKey(context.threadRef);
+  useDiffPanelStore.getState().selectRepository(context.threadRef, "/tracked/worktree");
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+    </RegistryContext.Provider>,
+  );
+  await expect.element(screen.getByText("task folder query failed", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect(useDiffPanelStore.getState().repositoryCwdByThreadKey[key]).toBe("/tracked/worktree");
+  expect(useDiffPanelStore.getState().branchBaseRefByThreadKey[key]).toBe("main");
+});
+
 it("says a turn diff cut off at the server's size limit is incomplete", async () => {
   using context = setup("origin/orphan");
   state.checkpoints = [
@@ -467,7 +565,11 @@ it("opens a file from a tool call's diff by the path its agent recorded", async 
   using context = setup("origin/orphan");
   // A local thread in a project that is the repository's apps/web folder.
   state.thread = { ...state.thread!, worktreePath: null };
-  state.project = { workspaceRoot: "/repo/apps/web", repositoryIdentity: { rootPath: "/repo" } };
+  state.project = {
+    workspaceRoot: "/repo/apps/web",
+    trackedFolders: [],
+    repositoryIdentity: { rootPath: "/repo" },
+  };
   const status = AsyncResult.getOrThrow(context.registry.get(state.status));
   state.status = Atom.make(
     AsyncResult.success({ ...status, workingTree: { ...status.workingTree, rootPath: "/repo" } }),

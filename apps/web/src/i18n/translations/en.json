@@ -12871,5 +12871,10 @@
   "f6a91589456cca50": "Approved",
   "c92657bb7f2293ff": "Needs approval",
   "f1e5c1be1ac92361": "Approve",
-  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal."
+  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
+  "e2e33c27c4a3af4c": "Find repository...",
+  "b781f558378592af": "No matching repository.",
+  "18ed3e1af363c529": "Workspace repository",
+  "332d417f22d1e83e": "Repository discovery reached its limit.",
+  "9bdaf65c667dedf2": "Review the thread's repository"
 }

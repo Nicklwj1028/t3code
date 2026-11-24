@@ -12862,5 +12862,10 @@
   "f6a91589456cca50": "Approuvée",
   "c92657bb7f2293ff": "Approbation requise",
   "f1e5c1be1ac92361": "Approuver",
-  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal."
+  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal.",
+  "e2e33c27c4a3af4c": "Rechercher un dépôt...",
+  "b781f558378592af": "Aucun dépôt correspondant.",
+  "18ed3e1af363c529": "Dépôt de l’espace de travail",
+  "332d417f22d1e83e": "La détection a atteint la limite de dépôts.",
+  "9bdaf65c667dedf2": "Examiner le dépôt du fil"
 }

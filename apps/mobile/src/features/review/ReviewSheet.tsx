@@ -1,6 +1,6 @@
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ReviewRepositoriesResult, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -63,6 +63,9 @@ import type { usePullRequestFileFilter } from "../pull-requests/usePullRequestFi
 
 function ReviewHeader(
   props: Parameters<typeof useReviewHeaderPresentation>[0] & {
+    readonly repositories: ReviewRepositoriesResult["repositories"];
+    readonly selectedGitRepository: ReviewRepositoriesResult["repositories"][number] | undefined;
+    readonly onSelectGitRepository: (cwd: string) => void;
     readonly sectionMenu: ReturnType<typeof buildReviewSectionMenu>;
     readonly showSectionToolbar: boolean;
     readonly showChangedFilesToggle: boolean;
@@ -108,6 +111,21 @@ function ReviewHeader(
           : undefined
       }
       menus={[
+        ...(props.repositories.length > 1
+          ? [
+              {
+                title: gt("Select Git repository"),
+                icon: "folder" as const,
+                items: props.repositories.map((repo) => ({
+                  id: repo.cwd,
+                  title: repo.name + ": " + (repo.branch ?? "HEAD"),
+                  subtitle: repo.path || gt("Workspace repository"),
+                  selected: repo.cwd === props.selectedGitRepository?.cwd,
+                  onPress: () => props.onSelectGitRepository(repo.cwd),
+                })),
+              },
+            ]
+          : []),
         ...(presentation.gitMenu ? [presentation.gitMenu] : []),
         ...(props.showSectionToolbar
           ? [
@@ -421,6 +439,11 @@ export function ReviewSheet(props: ReviewSheetProps) {
     refreshSelectedSection,
     selectSection,
     isSelectedSectionPending,
+    repositories,
+    selectedRepository: selectedGitRepository,
+    selectRepository: selectGitRepository,
+    reviewCwd,
+    repositoryPath,
   } = useReviewSections({
     enabled: isEnvironmentReady,
     environmentId,
@@ -454,7 +477,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
   } = useReviewDiffData({
     threadKey: reviewCache.threadKey,
     environmentId,
-    cwd: selectedThreadCwd,
+    cwd: reviewCwd,
+    repositoryPath,
     selectedSection,
     draftMessage,
     draftContext,
@@ -506,6 +530,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     environmentId,
     threadId,
     selectedSection,
+    repositoryPath,
     nativeReviewDiffData,
   });
   const reviewContentKey = selectedSection
@@ -617,7 +642,12 @@ export function ReviewSheet(props: ReviewSheetProps) {
       params: { environmentId: String(environmentId), threadId: String(threadId) },
     });
   };
+  const gitRepositoryLabel =
+    repositories.length > 1 && selectedSection?.kind !== "turn" && selectedGitRepository
+      ? selectedGitRepository.name + ": " + (selectedGitRepository.branch ?? "HEAD")
+      : null;
   const androidHeaderSubtitle = [
+    gitRepositoryLabel,
     selectedSection?.title,
     selectedRepository?.name,
     headerDiffSummary.additions,
@@ -686,6 +716,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     return <>{children}</>;
   })();
   const headerSubtitle = [
+    gitRepositoryLabel,
     selectedRepository?.name,
     headerDiffSummary.additions,
     headerDiffSummary.deletions,
@@ -713,7 +744,10 @@ export function ReviewSheet(props: ReviewSheetProps) {
         title={headerTitleText}
         subtitle={headerSubtitle}
         androidSubtitle={androidHeaderSubtitle}
-        selectedThreadCwd={selectedThreadCwd}
+        selectedThreadCwd={repositoryPath ? null : selectedThreadCwd}
+        repositories={repositories}
+        selectedGitRepository={selectedGitRepository}
+        onSelectGitRepository={selectGitRepository}
         sectionMenu={sectionMenu}
         selectedSection={selectedSection}
         showSectionToolbar={showSectionToolbar}

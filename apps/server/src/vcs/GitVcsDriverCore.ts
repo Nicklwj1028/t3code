@@ -29,6 +29,8 @@ import {
   type GitCommandFailureReason,
   T3_PROJECT_FILE_NAME,
   type ReviewBranchCommitsInput,
+  type ReviewRepositoriesInput,
+  type ReviewRepositoriesResult,
   type ReviewDiffChangeType,
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
@@ -1856,6 +1858,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const resolveReviewRepository = Effect.fn("resolveReviewRepository")(function* (
     cwd: string,
     needsCurrentBranch: boolean,
+    requireRepositoryRoot = false,
   ) {
     // A cached layout outlives a removed cwd, which must still read as a missing cwd.
     if (
@@ -1864,8 +1867,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ) {
       return null;
     }
-    const repository = yield* resolveRepositoryPaths(cwd);
-    if (repository?.worktreeRoot == null) return null;
+    const repository = yield* requireRepositoryRoot
+      ? resolveRepositoryPathsUncached(cwd)
+      : resolveRepositoryPaths(cwd);
+    if (
+      repository?.worktreeRoot == null ||
+      (requireRepositoryRoot && repository.isAtRepositoryRoot !== true)
+    )
+      return null;
     // The cached branch outlives a checkout made outside T3 Code, so it is read fresh.
     const currentBranch = needsCurrentBranch
       ? yield* readCurrentBranch("GitVcsDriver.review.currentBranch", cwd)
@@ -4683,10 +4692,133 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
+  const getReviewRepositories = Effect.fn("getReviewRepositories")(function* (
+    input: ReviewRepositoriesInput,
+  ) {
+    const root = yield* resolveRepositoryPathsUncached(input.cwd);
+    if (!root?.worktreeRoot) return { repositories: [], truncated: false };
+    const canonicalRoot = yield* fileSystem
+      .realPath(root.worktreeRoot)
+      .pipe(Effect.orElseSucceed(() => root.worktreeRoot!));
+    const canonicalWorkspace = yield* fileSystem
+      .realPath(input.cwd)
+      .pipe(Effect.orElseSucceed(() => path.resolve(input.cwd)));
+    const withinRoot = (candidate: string) => {
+      const relative = path.relative(canonicalWorkspace, candidate);
+      return (
+        relative === "" ||
+        (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+      );
+    };
+    const repositories: Array<ReviewRepositoriesResult["repositories"][number]> = [];
+    const seen = new Set<string>();
+    let pending = [canonicalRoot];
+    let truncated = false;
+    // Discovery is separate from diff/status refreshes and bounded for large umbrellas.
+    while (pending.length > 0) {
+      const batch = pending.splice(0, 8);
+      const found = yield* Effect.forEach(
+        batch,
+        (candidate) =>
+          Effect.gen(function* () {
+            const real = yield* fileSystem
+              .realPath(candidate)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (!real || (real !== canonicalRoot && !withinRoot(real)) || seen.has(real))
+              return null;
+            seen.add(real);
+            const stat = yield* fileSystem.stat(real).pipe(Effect.orElseSucceed(() => null));
+            if (stat?.type !== "Directory") return null;
+            const repo = yield* resolveRepositoryPathsUncached(real);
+            if (!repo?.worktreeRoot) return null;
+            const actualRoot = yield* fileSystem
+              .realPath(repo.worktreeRoot)
+              .pipe(Effect.orElseSucceed(() => null));
+            // Git otherwise walks out of an uninitialized module into its parent repository.
+            if (actualRoot !== real) return null;
+            const hasManifest = yield* fileSystem
+              .exists(path.join(real, ".gitmodules"))
+              .pipe(Effect.orElseSucceed(() => false));
+            // A deleted manifest is authoritative. Only a skip-worktree entry means Git hid it.
+            const sparseManifest =
+              !hasManifest &&
+              (yield* runGitStdout("GitVcsDriver.review.repositories.sparse", real, [
+                "ls-files",
+                "-t",
+                "--",
+                ".gitmodules",
+              ])).startsWith("S ");
+            const manifest =
+              hasManifest || sparseManifest
+                ? yield* executeGit(
+                    "GitVcsDriver.review.repositories",
+                    real,
+                    [
+                      "config",
+                      "-z",
+                      ...(sparseManifest ? ["--blob", "HEAD:.gitmodules"] : ["--file=.gitmodules"]),
+                      "--get-regexp",
+                      "^submodule\\..*\\.path$",
+                    ],
+                    { allowNonZeroExit: true, maxOutputBytes: 1024 * 1024 },
+                  )
+                : null;
+            const children =
+              manifest?.exitCode === 0
+                ? manifest.stdout.split("\0").flatMap((record) => {
+                    const separator = record.indexOf("\n");
+                    if (separator < 0) return [];
+                    const relative = record.slice(separator + 1);
+                    if (!relative || path.isAbsolute(relative)) return [];
+                    const child = path.resolve(real, relative);
+                    const local = path.relative(real, child);
+                    return local &&
+                      local !== ".." &&
+                      !local.startsWith(`..${path.sep}`) &&
+                      withinRoot(child)
+                      ? [child]
+                      : [];
+                  })
+                : [];
+            return {
+              repository: {
+                cwd:
+                  real === canonicalRoot
+                    ? input.cwd
+                    : path.resolve(input.cwd, path.relative(canonicalWorkspace, real)),
+                path:
+                  real === canonicalRoot
+                    ? ""
+                    : path.relative(canonicalWorkspace, real).split(path.sep).join("/"),
+                name: path.basename(real) || "Repository",
+                branch: yield* readCurrentBranch("GitVcsDriver.review.repositories.branch", real),
+              },
+              children,
+            };
+          }).pipe(
+            Effect.catchCause((cause) =>
+              candidate === canonicalRoot ? Effect.failCause(cause) : Effect.succeed(null),
+            ),
+          ),
+        { concurrency: 8 },
+      );
+      for (const item of found) {
+        if (!item) continue;
+        repositories.push(item.repository);
+        pending.push(...new Set(item.children.filter((child) => !seen.has(child))));
+      }
+      if (seen.size + pending.length > 256) {
+        pending = pending.slice(0, Math.max(0, 256 - seen.size));
+        truncated = true;
+      }
+    }
+    return { repositories: repositories.sort((a, b) => a.path.localeCompare(b.path)), truncated };
+  });
+
   const getReviewBranchCommits = Effect.fn("getReviewBranchCommits")(function* (
     input: ReviewBranchCommitsInput,
   ) {
-    const repository = yield* resolveReviewRepository(input.cwd, true);
+    const repository = yield* resolveReviewRepository(input.cwd, true, input.requireRepositoryRoot);
     if (!repository?.worktreeRoot) return { commits: [], truncated: false };
     const cwd = repository.worktreeRoot;
     const head = yield* executeGit(
@@ -4777,6 +4909,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const trackedReviewPreviewKey = (input: ReviewDiffPreviewInput) =>
     JSON.stringify([
       input.cwd,
+      input.requireRepositoryRoot === true,
       input.baseRef ?? null,
       input.sourceKind ?? null,
       input.ignoreWhitespace === true,
@@ -4828,13 +4961,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const reusesTracked = input.file === undefined && input.commitSha === undefined;
     const tracked = reusesTracked ? yield* takeTrackedReviewPreview(input) : undefined;
     const repository =
-      tracked?.repository ??
-      (yield* resolveReviewRepository(input.cwd, needsCurrentBranch).pipe(
-        Effect.catchTags({
-          GitCommandError: (error) =>
-            isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
-        }),
-      ));
+      tracked !== undefined && !input.requireRepositoryRoot
+        ? tracked.repository
+        : yield* resolveReviewRepository(
+            input.cwd,
+            needsCurrentBranch && tracked === undefined,
+            input.requireRepositoryRoot,
+          ).pipe(
+            Effect.map((resolved) =>
+              resolved === null ? null : (tracked?.repository ?? resolved),
+            ),
+            Effect.catchTags({
+              GitCommandError: (error) =>
+                isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
+            }),
+          );
     if (!repository?.worktreeRoot) {
       return {
         cwd: input.cwd,
@@ -5226,11 +5367,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const getReviewDiffFileContents = Effect.fn("getReviewDiffFileContents")(function* (
     input: ReviewDiffFileContentsInput,
   ) {
-    const repositoryRoot = yield* runGitStdout(
-      "GitVcsDriver.getReviewDiffFileContents.repositoryRoot",
-      input.cwd,
-      ["rev-parse", "--show-toplevel"],
-    ).pipe(Effect.map((value) => value.replace(/\n$/, "")));
+    const repositoryRoot = input.requireRepositoryRoot
+      ? ((yield* resolveReviewRepository(input.cwd, false, true))?.worktreeRoot ?? "")
+      : yield* runGitStdout("GitVcsDriver.getReviewDiffFileContents.repositoryRoot", input.cwd, [
+          "rev-parse",
+          "--show-toplevel",
+        ]).pipe(Effect.map((value) => value.replace(/\n$/, "")));
     if (repositoryRoot.length === 0) {
       return yield* reviewDiffFileError(input, "Could not resolve the Git repository root.");
     }
@@ -7146,6 +7288,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return yield* withListRefsInvalidation(cwd, pullCurrentBranch(cwd));
     }),
     readRangeContext,
+    getReviewRepositories,
     getReviewBranchCommits,
     getReviewDiffPreview,
     getReviewDiffFileContents,

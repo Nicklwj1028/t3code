@@ -12862,5 +12862,10 @@
   "f6a91589456cca50": "Genehmigt",
   "c92657bb7f2293ff": "Genehmigung nötig",
   "f1e5c1be1ac92361": "Genehmigen",
-  "fcb5f3c4d4753326": "Über diese Verbindung lassen sich keine Befehle genehmigen. Verwende einen Client, der das Terminal verwenden darf."
+  "fcb5f3c4d4753326": "Über diese Verbindung lassen sich keine Befehle genehmigen. Verwende einen Client, der das Terminal verwenden darf.",
+  "e2e33c27c4a3af4c": "Repository suchen...",
+  "b781f558378592af": "Kein passendes Repository.",
+  "18ed3e1af363c529": "Repository des Arbeitsbereichs",
+  "332d417f22d1e83e": "Die Suche hat ihr Limit für Repositorys erreicht.",
+  "9bdaf65c667dedf2": "Repository des Threads prüfen"
 }
