@@ -1444,6 +1444,7 @@ export function PullRequestDetailPanel({
         state: detail.state,
         isDraft: detail.isDraft,
         mergeability: detail.mergeability,
+        mergeBlocked: detail.mergeBlocked,
         checksState,
         autoMergeEnabled: detail.autoMergeEnabled,
         hasMergeMethod: allowedMergeMethods.length > 0,
@@ -1452,6 +1453,11 @@ export function PullRequestDetailPanel({
         canEnableAutoMerge: !stackOwnsMerge && can("enable-auto-merge"),
       })
     : null;
+  const primaryMergeBlockedReason =
+    mergeBlockedReason ??
+    (primaryAction === "merge" && detail?.mergeBlocked === true
+      ? gt("The repository's rules block merging until their requirements are met.")
+      : null);
   const showsDraftToggle =
     detail?.state === "open" &&
     can(detail.isDraft ? "ready" : "draft") &&
@@ -1473,6 +1479,7 @@ export function PullRequestDetailPanel({
     can("merge") &&
     !detail.isDraft &&
     !conflicting &&
+    detail.mergeBlocked !== true &&
     allowedMergeMethods.length > 0;
   const showsMergeMethods =
     detail?.state === "open" &&
@@ -1648,7 +1655,7 @@ export function PullRequestDetailPanel({
                 />
               ) : null}
               <PullRequestPrimaryAction
-                mergeBlockedReason={mergeBlockedReason}
+                mergeBlockedReason={primaryMergeBlockedReason}
                 pullRequestKey={pullRequestKey}
                 primaryAction={primaryAction}
                 autoMergeArmed={autoMergeArmed}

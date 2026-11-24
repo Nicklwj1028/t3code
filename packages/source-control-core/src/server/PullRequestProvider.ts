@@ -278,6 +278,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly autoMergeEnabled?: boolean;
   readonly autoMergeMethod?: PullRequestMergeMethod;
   readonly workflowApprovalsRequired?: number;
+  readonly mergeBlocked?: boolean;
   readonly mergeQueueRemoval?: PullRequestMergeQueueRemoval;
 }
 
@@ -438,7 +439,10 @@ export interface PullRequestProviderApi {
 
   readonly getChangeRequestChecks?: (
     input: ProviderRepositoryRef & { readonly number: number },
-  ) => Effect.Effect<Pick<PullRequestChecks, "state" | "checks">, PullRequestProviderError>;
+  ) => Effect.Effect<
+    Pick<PullRequestChecks, "state" | "checks" | "mergeBlocked">,
+    PullRequestProviderError
+  >;
 
   readonly getChangeRequest: (
     input: ProviderRepositoryRef & { readonly number: number },
