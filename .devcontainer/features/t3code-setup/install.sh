@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build-time container setup. Feature
-# installs run as root; _REMOTE_USER and _REMOTE_USER_HOME are provided by the
+# Build-time container setup, baked into the image and prebuilds. Feature
+# installs run as root; _REMOTE_USER and _REMOTE_USER_HOME come from the
 # devcontainer tooling. Content-dependent work lives in update-content.sh.
 set -euo pipefail
 
@@ -50,5 +50,5 @@ T3 Code devcontainer
   cp .env.example .env  optional: enable T3 Connect cloud features
                         (public identifiers, not secrets)
 
-Details: docs/internals/devcontainer.md
+Details: docs/operations/01_devcontainer.md
 NOTICE
