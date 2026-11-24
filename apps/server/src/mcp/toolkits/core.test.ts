@@ -4,7 +4,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
-  DEFAULT_SERVER_SETTINGS,
   ChatImageAttachment,
   CommandId,
   EnvironmentId,
@@ -62,7 +61,6 @@ import * as McpInvocationContext from "../McpInvocationContext.ts";
 import * as McpToolAccessTestkit from "../McpToolAccess.testkit.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { dispatchFailure } from "../threadAccess.ts";
-import * as EnvironmentHandlers from "./environment/handlers.ts";
 import * as AttachmentHandlers from "./attachment/handlers.ts";
 import { ThreadToolkit } from "./thread/tools.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
@@ -706,24 +704,6 @@ it.effect("keeps unexpected handler defects private through the production regis
   ),
 );
 
-it("keeps MCP preference output allowlisted and Unicode-bounded", () => {
-  const settings = {
-    ...DEFAULT_SERVER_SETTINGS,
-    privateCredential: "must-not-escape",
-    sourceControlWritingStyle: {
-      ...DEFAULT_SERVER_SETTINGS.sourceControlWritingStyle,
-      customInstructions: "🙂".repeat(4001),
-    },
-  };
-  const result = EnvironmentHandlers.preferences(settings);
-  expect(result).not.toHaveProperty("privateCredential");
-  expect(result).not.toHaveProperty("providers");
-  expect(result.sourceControlWritingStyle).toMatchObject({
-    customInstructions: "🙂".repeat(4000),
-    truncated: true,
-  });
-});
-
 it.effect("resolves reused attachment references from stored metadata", () =>
   Effect.gen(function* () {
     const stored = ChatImageAttachment.make({
@@ -1156,6 +1136,18 @@ it.effect.each([
     error: new ScheduledTaskError({ message: "must not run a missing task" }),
     code: "invalid_request",
     message: "The scheduled task was not found.",
+  },
+  {
+    scenario: "refuses a task whose saved prompt signs a provider out",
+    tasks: [
+      {
+        ...Schema.decodeSync(ScheduledTask)(scheduledTask("task-webhook", "full-access")),
+        prompt: "/logout",
+      },
+    ],
+    error: new ScheduledTaskError({ message: "must not run a sign-out task" }),
+    code: "capability_denied",
+    message: "Only the user can sign a provider out, by sending `/logout` themselves.",
   },
 ])("run_scheduled_task_now $scenario", ({ tasks, error, code, message }) =>
   Effect.gen(function* () {

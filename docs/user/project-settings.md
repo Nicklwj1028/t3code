@@ -302,3 +302,17 @@ On mobile, use **Settings → Source control & issues** to change selected envir
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Ask an agent
+
+An agent can change an environment's settings for you, for example "stop keeping my machine awake
+while agents work" or "name new branches with the prefix jl". The thread must run in Full access.
+It changes the environment value, not a preference saved on this device. Of a project's overrides,
+it can change the default model, new-thread mode, and auto-pull.
+
+Some settings stay with you: secrets and credentials, providers, access and sharing, cleanup that
+deletes files, actions, instructions that other models follow, and anything that widens what agents
+may do, such as browser or device access or the default permission mode. The agent sees that these
+settings exist and whether you changed them, but not their values, and asks you to change them in
+Settings.
+Settings your organization manages cannot be changed by an agent either.
