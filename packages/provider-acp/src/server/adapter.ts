@@ -435,9 +435,11 @@ export interface AcpAdapterV2Flavor {
    * Runs before `session/prompt`. The check reports a failure hidden by a clean stop, or
    * by silence when the inactivity watchdog retires the prompt (`retired`). A failure
    * restarts the runtime; a `broken` thread's next turn starts a fresh session.
+   * `textOnly` is true when the prompt carries no attachments and only text blocks.
    */
   readonly watchPromptOutcome?: (
     sessionId: string,
+    textOnly: boolean,
   ) => Effect.Effect<
     (
       result: EffectAcpSchema.PromptResponse,
@@ -10024,7 +10026,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const checkPromptOutcome =
               flavor.watchPromptOutcome === undefined
                 ? undefined
-                : yield* flavor.watchPromptOutcome(requestedSessionId);
+                : yield* flavor.watchPromptOutcome(
+                    requestedSessionId,
+                    turnInput.message.attachments.length === 0 &&
+                      promptParts !== null &&
+                      promptParts.prompt.every((block) => block.type === "text"),
+                  );
             const promptGeneration = yield* Ref.get(runtimeCallbackGeneration);
             const promptOptions = {
               dispatched: context.promptDispatched,
@@ -10132,7 +10139,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               const checkPromptOutcome =
                 flavor.watchPromptOutcome === undefined
                   ? undefined
-                  : yield* flavor.watchPromptOutcome(context.nativeThreadId);
+                  : yield* flavor.watchPromptOutcome(
+                      context.nativeThreadId,
+                      turnInput.message.attachments.length === 0 &&
+                        attachmentBlocks.every((block) => block.type === "text"),
+                    );
               const dispatched = yield* Deferred.make<void, never>();
               const steered = yield* runRuntimeCallbackAtGeneration(
                 generation,
