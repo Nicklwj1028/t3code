@@ -19,7 +19,7 @@ import {
   type VcsStatusResult,
 } from "@t3tools/contracts";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { TerminalIcon } from "lucide-react";
+import { TerminalIcon, Volume2Icon } from "lucide-react";
 import { m, type MessageResolver } from "../i18n/messages";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -42,6 +42,7 @@ import {
 } from "react";
 import { cn } from "../lib/utils";
 import { revealThreadTerminal } from "../lib/revealThreadTerminal";
+import { useRightPanelStore } from "../rightPanelStore";
 
 import { useEnvironmentQuery } from "../state/query";
 import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
@@ -794,6 +795,45 @@ export function ThreadTerminalStatusButton({
           className="size-3.5 motion-safe:animate-status-pulse"
           onAnimationStart={synchronizeTerminalPulse}
         />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function ThreadPreviewAudioButton({
+  threadRef,
+  tabId,
+  onThreadActivate,
+}: {
+  threadRef: ScopedThreadRef;
+  tabId: string | null;
+  onThreadActivate: (threadRef: ScopedThreadRef) => void;
+}) {
+  const gt = useGT();
+  if (tabId === null) return null;
+  const label = gt("Browser tab playing audio. Open tab");
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-testid={`sidebar-preview-audio-${threadRef.threadId}`}
+            className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              useRightPanelStore.getState().openBrowser(threadRef, tabId);
+              onThreadActivate(threadRef);
+            }}
+          />
+        }
+      >
+        <Volume2Icon aria-hidden className="size-3.5" />
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
