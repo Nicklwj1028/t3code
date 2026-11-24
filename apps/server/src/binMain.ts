@@ -8,6 +8,8 @@ export async function runCliCommand() {
   // Install the socket guard before importing code that can open outbound connections.
   const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
   ignoreMacosTypeOfServiceEinval();
+  const { patchAndroidHardlinkFallback } = await import("./androidCompat.ts");
+  patchAndroidHardlinkFallback();
   if (command === "__document-text") {
     const { extractDocumentText } = await import("./provider/documentTextWorker.ts");
     try {
