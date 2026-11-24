@@ -1107,8 +1107,11 @@ const make = Effect.gen(function* () {
       // The agent must start on the branch name the thread will show.
       if (branchRename !== null) yield* Fiber.join(branchRename);
       yield* setupTracker.markUncancellable(threadId);
-      yield* setupTracker.stageStatus(threadId, "agent", "running");
-      if (runId !== null) {
+      // A launch with no first message, such as a moved thread, hands no run to an agent.
+      if (runId === null) {
+        yield* setupTracker.stageStatus(threadId, "agent", "skipped");
+      } else {
+        yield* setupTracker.stageStatus(threadId, "agent", "running");
         yield* threads
           .dispatch({
             type: "prepared-run.release",
@@ -1125,8 +1128,8 @@ const make = Effect.gen(function* () {
             ),
             Effect.uninterruptible,
           );
+        yield* setupTracker.stageStatus(threadId, "agent", "done");
       }
-      yield* setupTracker.stageStatus(threadId, "agent", "done");
       yield* awaitAsyncSetup;
       yield* setupTracker.finish(threadId, "done");
     }).pipe(
