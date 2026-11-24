@@ -133,6 +133,7 @@ import {
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
 import { useProjectPin } from "../hooks/useProjectGroupUpdate";
+import { useMissingProjectFolders } from "../hooks/useMissingProjectFolders";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
@@ -280,6 +281,7 @@ import {
   useSidebarDrafts,
 } from "./sidebar/SidebarDraftBlock";
 import {
+  MissingProjectFolderMark,
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
@@ -837,6 +839,20 @@ function useSidebarLookups() {
   const projectByKey = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project] as const),
   );
+  const missingFolders = useMissingProjectFolders(
+    projects.filter((project) => project.isScratch !== true),
+  );
+  const missingProjectFolderKeys = new Set(
+    projects.flatMap((project) =>
+      missingFolders.some(
+        (folder) =>
+          folder.environmentId === project.environmentId &&
+          folder.workspaceRoot === project.workspaceRoot,
+      )
+        ? [`${project.environmentId}:${project.id}`]
+        : [],
+    ),
+  );
   const projectDisplayNameByKey = new Map(
     projectGroups.flatMap((group) =>
       group.memberProjects.map(
@@ -862,6 +878,7 @@ function useSidebarLookups() {
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
+    missingProjectFolderKeys,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
@@ -933,6 +950,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectByKey,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
+    missingProjectFolderKeys,
     projectScopeItems: lookupProjectScopeItems,
   } = useSidebarLookups();
   const delegatedUnderParent = useDelegatedUnderParent();
@@ -1289,6 +1307,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     ) => {
       const api = readLocalApi();
       if (!api) return;
+      // A grouped project has a folder per checkout, so those change from project settings.
+      const canChangeFolder =
+        group.memberProjects.length <= 1 &&
+        !group.isScratch &&
+        readEnvironmentScope(group.environmentId, AuthOrchestrationOperateScope);
       void (async () => {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
@@ -1302,6 +1325,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       : { id: "pin", label: gt("Pin project"), icon: "pin" },
                   ]
                 : []),
+              ...(canChangeFolder ? [{ id: "change-folder", label: gt("Change folder…") }] : []),
               { id: "project-settings", label: gt("Project settings"), icon: "settings" },
             ],
             position,
@@ -1319,6 +1343,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "pin":
           case "unpin":
             setProjectGroupPinned(group, clicked.value === "pin");
+            return;
+          case "change-folder":
+            openCommandPalette({
+              open: "change-project-folder",
+              projectRef: scopeProjectRef(group.environmentId, group.id),
+            });
             return;
           case "project-settings":
             openProjectSettings(group);
@@ -3249,6 +3279,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               )}
                             </ProjectScopeRowIcon>
                             <span className="min-w-0 truncate text-sm">{item.label}</span>
+                            {project ? <MissingProjectFolderMark group={project} /> : null}
                             {project && showProjectEnvironments ? (
                               <ProjectEnvironmentBadge
                                 group={project}
@@ -3590,6 +3621,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 `${thread.environmentId}:${thread.projectId}`,
                               ) ?? null
                             }
+                            projectFolderMissing={missingProjectFolderKeys.has(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            )}
                             providerEntryByInstanceId={
                               providerEntriesByEnvironment.get(thread.environmentId) ??
                               EMPTY_PROVIDER_ENTRIES
