@@ -144,6 +144,7 @@ type NewTaskFlowContextValue = {
   readonly activeNewTask: { readonly pendingKey: string | null } | null;
   readonly projectScopes: ReadonlyArray<HomeProjectScope>;
   readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly stampedEnvironmentId: EnvironmentId | null;
   readonly selectedProjectKey: string | null;
   readonly selectedModelKey: string | null;
   readonly workspaceMode: WorkspaceMode;
@@ -917,6 +918,7 @@ export function NewTaskFlowProvider(
     activeNewTask,
     projectScopes,
     selectedEnvironmentId,
+    stampedEnvironmentId,
     selectedProjectKey,
     selectedModelKey,
     workspaceMode,
