@@ -307,6 +307,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const updateRestartMarkers = new Set<string>();
   const updateMarkerContents = new Map<string, string>();
   const installRecords = new Map<string, string>();
+  const deletedFiles = new Set<string>();
   let previousInstallRecord = options.installRecord;
   const isInstallRecord = (path: string) =>
     path.endsWith(DesktopUpdates.DESKTOP_UPDATE_INSTALL_RECORD_FILE);
@@ -359,6 +360,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
             }),
           )
         : Effect.void,
+    exists: (path) => Effect.succeed(!deletedFiles.has(path)),
     readDirectory: () => Effect.succeed(["T3 Code.app"]),
     makeDirectory: () => Effect.void,
     writeFileString: (path, data) =>
@@ -425,6 +427,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     updateInProgressMarker: () =>
       [...updateMarkerContents].find(([path]) => path.endsWith("/desktop-update-in-progress"))?.[1],
     installRecords,
+    /** Paths removed behind the app's back, as by a cache cleaner. */
+    deletedFiles,
     previousInstallRecord: () => previousInstallRecord,
     downloadCount: () => downloadCount,
     feedUrls: (): ElectronUpdater.ElectronUpdaterFeedUrl[] => feedUrls,
