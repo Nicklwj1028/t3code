@@ -3075,7 +3075,7 @@ function OpenCommandPaletteDialog(props: {
       ? highlightedItemValue === null
         ? gt("Create")
         : highlightedItemValue === newProjectPublishToggleValue
-          ? gt("Toggle")
+          ? gt("Toggle", { $context: "verb, toggle a publish option" })
           : gt("Select")
       : addProjectCloneFlow?.step === "repository"
         ? (remoteProjectButtonLabel ?? gt("Continue"))
