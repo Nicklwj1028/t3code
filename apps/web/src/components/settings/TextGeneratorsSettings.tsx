@@ -490,18 +490,19 @@ function TextGeneratorWizard({
                   <Label htmlFor="text-generator-timeout">
                     <T>Request timeout (seconds)</T>
                   </Label>
-                  <Input
-                    id="text-generator-timeout"
-                    className="max-w-40"
-                    type="number"
-                    min={TEXT_GENERATOR_TIMEOUT_SECONDS_BOUNDS.minimum}
-                    max={TEXT_GENERATOR_TIMEOUT_SECONDS_BOUNDS.maximum}
-                    step={1}
-                    inputMode="numeric"
-                    placeholder={String(TEXT_GENERATOR_DEFAULT_TIMEOUT_SECONDS)}
-                    value={timeoutDraft}
-                    onChange={(event) => setTimeoutDraft(event.target.value)}
-                  />
+                  <div className="max-w-40">
+                    <Input
+                      id="text-generator-timeout"
+                      type="number"
+                      min={TEXT_GENERATOR_TIMEOUT_SECONDS_BOUNDS.minimum}
+                      max={TEXT_GENERATOR_TIMEOUT_SECONDS_BOUNDS.maximum}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder={String(TEXT_GENERATOR_DEFAULT_TIMEOUT_SECONDS)}
+                      value={timeoutDraft}
+                      onChange={(event) => setTimeoutDraft(event.target.value)}
+                    />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     <T>
                       How long one generation may take before it is given up on. Raise it for a slow
