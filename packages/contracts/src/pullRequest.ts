@@ -438,12 +438,18 @@ export const PullRequestListProjectError = Schema.Struct({
 });
 export type PullRequestListProjectError = typeof PullRequestListProjectError.Type;
 
+export const PullRequestListRepository = Schema.Struct({
+  host: TrimmedNonEmptyString,
+  repository: TrimmedNonEmptyString,
+});
+export type PullRequestListRepository = typeof PullRequestListRepository.Type;
+
 export const PullRequestListResult = Schema.Struct({
   /** Unreadable hosts are absent; JSON codecs reject optional record values. */
   viewers: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
   providers: Schema.Array(PullRequestProviderSummary),
   /** Repositories read for a single-project listing, so callers can look up older PRs by number. */
-  repositories: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  repositories: Schema.optional(Schema.Array(PullRequestListRepository)),
   /** Re-sort after appending: one repository's older slice may outrank another's existing rows. */
   entries: Schema.Array(PullRequestListEntry),
   errors: Schema.Array(PullRequestListProjectError),
@@ -572,6 +578,7 @@ export type PullRequestStack = typeof PullRequestStack.Type;
 
 export const PullRequestDiffStat = Schema.Struct({
   projectId: ProjectId,
+  host: Schema.optional(TrimmedNonEmptyString),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
   additions: NonNegativeInt,
