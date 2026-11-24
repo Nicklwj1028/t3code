@@ -10636,75 +10636,75 @@
   "5c6afb84c90d6b73": "Wybieraj okno za każdym razem",
   "7d1dbeff82d6b135": "Twój pulpit nie obsługuje automatycznego przechwytywania. Zamiast tego będziesz wybierać okno do przechwycenia.",
   "e817b0aa6b6898e7": "Twój pulpit może poprosić o uprawnienie przy pierwszym przechwyceniu.",
-  "7d646653c8dda87f": "Test a snapshot of the current window. If macOS asks to bypass its window picker, choose Allow. The test image is discarded.",
-  "a3d05d98ed0cd5a4": "Allow each permission, then continue.",
-  "9e678fc4a38c5e55": "Allow access when prompted to start capturing windows.",
-  "a5a9ebd48c818edd": "Choose your shortcut",
-  "06876b4a29c38f16": "Click the shortcut, then press the keys you want.",
-  "28d9893fae086b73": "Choose your keys, then approve the permission prompt if asked.",
-  "f0d425b07fcbc3ea": "Use both Shift keys, or record a different shortcut.",
-  "d540b70f53f1d607": "Set up snapshots for {desktop}",
-  "64581b55ed1d7bd0": "Set up snapshots",
-  "c07fc2cd79fb94c4": "Screen Recording",
-  "f9ea8807dc374cd8": "Capture the window you're using.",
-  "48a77acf7f6d02ce": "Include text and controls from the captured app.",
-  "0be1d4792a45fe09": "Optional. Include text and controls from the captured app.",
-  "3fedab2033ce9bb4": "Shortcut permissions",
-  "75b1a7d1af613c5d": "Finish later",
-  "06980ca0b81bf3b7": "Update helper",
-  "08f57e9a43ad6b5a": "Install helper",
-  "86522c53dd8e09d1": "Working…",
-  "f3c63f198627f0dd": "Update extension",
-  "df1a5ac47a9530a6": "Install extension",
-  "e0616a924f8405cb": "Enable extension",
-  "e51b6b6431fdd9e6": "Test capture and continue",
-  "9a3ea24d93cf9fa9": "Allow capture",
-  "81b178b7860565c5": "Save and finish",
-  "065d4e8c98bf7fd1": "Reinstall helper",
-  "96f626130ea0ccc5": "Capture needs attention. Go back to check access.",
-  "435b1ca4e061c17d": "Couldn't finish this step. Try again or check Advanced for help.",
-  "cb2d986e3d65b30a": "Included with T3 Code. No download needed.",
-  "e67452f247cc5272": "Disable extension",
-  "199401965e68b97b": "Remove capture helper",
-  "988358208ad49792": "{count, plural, one {minute} other {minutes}}",
-  "07b142ed9cc5e3f6": "{count, plural, one {hour} other {hours}}",
-  "26184a346ce1c1dc": "{count, plural, one {day} other {days}}",
-  "f84c89790e008f96": "In",
-  "5717fb8ba7e64068": "Today",
-  "bf61ac437d87efe9": "Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today.",
-  "8bb245539b66f335": "Reset snooze options to default",
-  "d3d892e3b378a068": "Passed for today",
-  "f9545569e1e07fa7": "Duplicate of an option above",
-  "77af97dbd00773ff": "Same time as an option above",
-  "668b9b350f7c59c5": "Snooze option {number}",
-  "47c68bbefa86127b": "Remove snooze option {number}",
-  "6cc5fb55ba007097": "Menus offer only Custom…",
-  "301f702eb6255101": "Menu now: {options}",
-  "bde071612135c481": "When",
-  "83c461322b777535": "at",
-  "a3c37b4a4e597700": "Time",
-  "3179349e81c5aa31": "Decrease",
-  "227fe0a476980477": "Amount",
-  "9a4f982a83ded050": "Increase",
-  "2c9cab685debcf95": "Unit",
-  "61c679fe5bf0e3ee": "Add option",
+  "7d646653c8dda87f": "Przetestuj snapshot bieżącego okna. Jeśli macOS zapyta o pominięcie swojego selektora okien, wybierz Zezwalaj. Obraz testowy jest odrzucany.",
+  "a3d05d98ed0cd5a4": "Zezwól na każde uprawnienie, a następnie kontynuuj.",
+  "9e678fc4a38c5e55": "Zezwól na dostęp po monicie, aby zacząć przechwytywać okna.",
+  "a5a9ebd48c818edd": "Wybierz swój skrót",
+  "06876b4a29c38f16": "Kliknij pole skrótu, a następnie naciśnij żądane klawisze.",
+  "28d9893fae086b73": "Wybierz klawisze, a następnie zatwierdź monit o uprawnienie, jeśli się pojawi.",
+  "f0d425b07fcbc3ea": "Użyj obu klawiszy Shift albo nagraj inny skrót.",
+  "d540b70f53f1d607": "Skonfiguruj snapshoty dla {desktop}",
+  "64581b55ed1d7bd0": "Skonfiguruj snapshoty",
+  "c07fc2cd79fb94c4": "Nagrywanie ekranu",
+  "f9ea8807dc374cd8": "Przechwytuj okno, z którego korzystasz.",
+  "48a77acf7f6d02ce": "Uwzględniaj tekst i kontrolki z przechwyconej aplikacji.",
+  "0be1d4792a45fe09": "Opcjonalne. Uwzględniaj tekst i kontrolki z przechwyconej aplikacji.",
+  "3fedab2033ce9bb4": "Uprawnienia skrótu",
+  "75b1a7d1af613c5d": "Dokończ później",
+  "06980ca0b81bf3b7": "Zaktualizuj pomocnika",
+  "08f57e9a43ad6b5a": "Zainstaluj pomocnika",
+  "86522c53dd8e09d1": "Działanie…",
+  "f3c63f198627f0dd": "Zaktualizuj rozszerzenie",
+  "df1a5ac47a9530a6": "Zainstaluj rozszerzenie",
+  "e0616a924f8405cb": "Włącz rozszerzenie",
+  "e51b6b6431fdd9e6": "Przetestuj przechwytywanie i kontynuuj",
+  "9a3ea24d93cf9fa9": "Zezwól na przechwytywanie",
+  "81b178b7860565c5": "Zapisz i zakończ",
+  "065d4e8c98bf7fd1": "Przeinstaluj pomocnika",
+  "96f626130ea0ccc5": "Przechwytywanie wymaga uwagi. Wróć, aby sprawdzić dostęp.",
+  "435b1ca4e061c17d": "Nie udało się ukończyć tego kroku. Spróbuj ponownie albo zajrzyj do sekcji Zaawansowane po pomoc.",
+  "cb2d986e3d65b30a": "Dołączone do T3 Code. Bez pobierania.",
+  "e67452f247cc5272": "Wyłącz rozszerzenie",
+  "199401965e68b97b": "Usuń pomocnika przechwytywania",
+  "988358208ad49792": "{count, plural, one {minuta} few {minuty} many {minut} other {minut}}",
+  "07b142ed9cc5e3f6": "{count, plural, one {godzina} few {godziny} many {godzin} other {godzin}}",
+  "26184a346ce1c1dc": "{count, plural, one {dzień} few {dni} many {dni} other {dni}}",
+  "f84c89790e008f96": "Za",
+  "5717fb8ba7e64068": "Dzisiaj",
+  "bf61ac437d87efe9": "Opcje w każdym menu uśpienia, od najbliższych. Dni tygodnia oznaczają najbliższy po dzisiaj.",
+  "8bb245539b66f335": "Zresetuj opcje uśpienia do domyślnych",
+  "d3d892e3b378a068": "Minione na dzisiaj",
+  "f9545569e1e07fa7": "Duplikat opcji powyżej",
+  "77af97dbd00773ff": "Ta sama godzina co opcja powyżej",
+  "668b9b350f7c59c5": "Opcja uśpienia {number}",
+  "47c68bbefa86127b": "Usuń opcję uśpienia {number}",
+  "6cc5fb55ba007097": "Menu oferuje tylko Niestandardowe…",
+  "301f702eb6255101": "Menu teraz: {options}",
+  "bde071612135c481": "Kiedy",
+  "83c461322b777535": "o",
+  "a3c37b4a4e597700": "Godzina",
+  "3179349e81c5aa31": "Zmniejsz",
+  "227fe0a476980477": "Ilość",
+  "9a4f982a83ded050": "Zwiększ",
+  "2c9cab685debcf95": "Jednostka",
+  "61c679fe5bf0e3ee": "Dodaj opcję",
   "2dcb34eb2856dca0": [
-    "Up to ",
+    "Do ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " options"
+    " opcji"
   ],
-  "5a15598cf35f21d5": "Hidden account",
-  "9a45e39fc525861b": "Hide {label} accounts",
-  "7a41204a0c474da6": "Reveal {label} accounts",
-  "08bef4c99734eb67": "Use {label} on {host}",
-  "ac84c037d4bef01d": "{label} account for {host}",
-  "0013f3b084afe69b": "Account {number}",
+  "5a15598cf35f21d5": "Ukryte konto",
+  "9a45e39fc525861b": "Ukryj konta {label}",
+  "7a41204a0c474da6": "Pokaż konta {label}",
+  "08bef4c99734eb67": "Użyj {label} na {host}",
+  "ac84c037d4bef01d": "Konto {label} dla {host}",
+  "0013f3b084afe69b": "Konto {number}",
   "01bc6ecd8046472b": [
-    "Sign in with",
+    "Zaloguj się za pomocą",
     " ",
     {
       "t": "code",
@@ -10716,10 +10716,10 @@
       }
     },
     " ",
-    "on the server host, then rescan to choose accounts here."
+    "na hoście serwera, a następnie przeskanuj ponownie, aby wybrać tu konta."
   ],
   "e16fcb963aa57134": [
-    "Choose which",
+    "Wybierz, którego",
     " ",
     {
       "t": "code",
@@ -10731,23 +10731,23 @@
       }
     },
     " ",
-    "login each ",
+    "loginu używa każdy host ",
     {
       "i": 3,
       "k": "_gt_value_3",
       "v": "v"
     },
-    " host uses, or turn a host off."
+    " albo wyłącz hosta."
   ],
-  "9e8b725de0072098": "Signed in as",
+  "9e8b725de0072098": "Zalogowano jako",
   "25d2d58cd2a8f103": [
-    "Active ",
+    "Aktywne konto ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " account (",
+    " (",
     {
       "t": "RedactedLogin",
       "i": 2
@@ -10755,25 +10755,25 @@
     ")"
   ],
   "5047a415b9380805": [
-    "Active ",
+    "Aktywne konto ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " account"
+    " "
   ],
   "5274057e57269312": [
-    "The chosen login is no longer signed in, so the active ",
+    "Wybrany login nie jest już zalogowany, więc aktywny login ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
     " ",
-    "login is used."
+    "jest używany."
   ],
-  "6e72b298ef439944": "Use active login",
+  "6e72b298ef439944": "Użyj aktywnego loginu",
   "720ad3bcd44f1740": [
     {
       "t": "RedactedLogin",
@@ -10784,7 +10784,7 @@
       "t": "span",
       "i": 2,
       "c": [
-        "can't be used: ",
+        "nie może być użyty: ",
         {
           "i": 3,
           "k": "_gt_value_3",
@@ -10803,13 +10803,13 @@
       "t": "span",
       "i": 2,
       "c": [
-        "can't be used: ",
+        "nie może być użyty: ",
         {
           "i": 3,
           "k": "_gt_value_3",
           "v": "v"
         },
-        " reports this login as invalid."
+        " zgłasza ten login jako nieprawidłowy."
       ]
     }
   ],
@@ -10819,67 +10819,67 @@
       "k": "_gt_value_1",
       "v": "v"
     },
-    " is set on the server, so it overrides the account chosen here until it is unset."
+    " jest ustawiona na serwerze, więc nadpisuje konto wybrane tutaj, dopóki nie zostanie usunięta."
   ],
-  "b53527a02b031077": "Clipboard API is unavailable while copying sign-in code.",
-  "a9a5c6fe0166c0e3": "Failed to copy sign-in code to the clipboard.",
-  "f18f93cf2941bfc3": "Signed-in GitHub account",
-  "f7b3ac7ea71b2a41": "Show account",
-  "8de5a4366b58bdba": "Hide account",
-  "362486999f207b7d": "Signed in, but the token saved below is used while it can be read.",
-  "9e8db85a88bbfa4a": "Signed in",
-  "4e4ab7e39d3cb684": "Approve the app on GitHub to finish signing in.",
-  "154b0a0947b7f831": "A far higher GitHub API rate limit than a personal token or gh login.",
-  "e860c536bb9cad2d": "Sign in with GitHub",
+  "b53527a02b031077": "Clipboard API jest niedostępne podczas kopiowania kodu logowania.",
+  "a9a5c6fe0166c0e3": "Nie udało się skopiować kodu logowania do schowka.",
+  "f18f93cf2941bfc3": "Zalogowane konto GitHub",
+  "f7b3ac7ea71b2a41": "Pokaż konto",
+  "8de5a4366b58bdba": "Ukryj konto",
+  "362486999f207b7d": "Zalogowano, ale poniżej zapisany token jest używany, dopóki można go odczytać.",
+  "9e8db85a88bbfa4a": "Zalogowano",
+  "4e4ab7e39d3cb684": "Zatwierdź aplikację na GitHubie, aby dokończyć logowanie.",
+  "154b0a0947b7f831": "Znacznie wyższy limit zapytań API GitHuba niż token osobisty lub login gh.",
+  "e860c536bb9cad2d": "Zaloguj się przez GitHub",
   "c97e21dd6897fa79": [
-    "Signed in as",
+    "Zalogowano jako",
     {
       "t": "RedactedSensitiveText",
       "i": 1
     }
   ],
-  "a9d6996c73500a5c": "Copy code & open GitHub",
+  "a9d6996c73500a5c": "Skopiuj kod i otwórz GitHub",
   "4b4a237faa5c3ded": [
-    "Waiting for approval · code expires at ",
+    "Oczekiwanie na zatwierdzenie · kod wygasa ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     }
   ],
-  "795283fe03fcfac4": "Reaches repositories in accounts and organizations that installed the app.",
-  "834dced9a4651f60": "Install on an organization",
-  "d15cc7522e8d9637": "Manage on GitHub",
-  "719fdde2cc71cced": "Authenticated",
-  "d6845667c3278af2": "Not authenticated",
-  "7813f10f3f534004": "Status unknown",
-  "4f3c3b40b25cac07": "Toggle source control account visibility",
-  "16ffdd2f02752973": "Toggle {label} details",
-  "b98fef2c26258e7b": "Offer {label} when adding or publishing a project",
-  "516da46e1bc929e2": "Server environment",
-  "c69a143ba3383658": "Could not scan the server environment",
-  "6985d8cfe8f3f2f2": "Nothing detected yet",
-  "5b17411e32ec9ee8": "Install Git on the server, add optional hosting integrations or credentials your workspace needs, then rescan.",
-  "52f500fa58827159": "Rescan server environment",
-  "3bd42b40bd62ca11": "Source control providers",
+  "795283fe03fcfac4": "Dociera do repozytoriów w kontach i organizacjach, które zainstalowały aplikację.",
+  "834dced9a4651f60": "Zainstaluj w organizacji",
+  "d15cc7522e8d9637": "Zarządzaj na GitHubie",
+  "719fdde2cc71cced": "Uwierzytelniono",
+  "d6845667c3278af2": "Brak uwierzytelnienia",
+  "7813f10f3f534004": "Status nieznany",
+  "4f3c3b40b25cac07": "Przełącz widoczność konta kontroli wersji",
+  "16ffdd2f02752973": "Przełącz szczegóły {label}",
+  "b98fef2c26258e7b": "Proponuj {label} przy dodawaniu lub publikowaniu projektu",
+  "516da46e1bc929e2": "Środowisko serwera",
+  "c69a143ba3383658": "Nie udało się przeskanować środowiska serwera",
+  "6985d8cfe8f3f2f2": "Jeszcze nic nie wykryto",
+  "5b17411e32ec9ee8": "Zainstaluj Git na serwerze, dodaj opcjonalne integracje hostingowe lub poświadczenia, których potrzebuje Twój workspace, a następnie przeskanuj ponownie.",
+  "52f500fa58827159": "Przeskanuj ponownie środowisko serwera",
+  "3bd42b40bd62ca11": "Dostawcy kontroli wersji",
   "d6738114d4de6d92": [
-    "Support for ",
+    "Obsługa ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " is coming soon."
+    " pojawi się wkrótce."
   ],
   "babdf7cafe2344e4": [
-    "Not available on this server: ",
+    "Niedostępne na tym serwerze: ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     }
   ],
-  "3d084099adaeed61": "Authenticated",
+  "3d084099adaeed61": "Uwierzytelniono",
   "3dbd16ab0f7ba2b3": [
     "Available. ",
     {
