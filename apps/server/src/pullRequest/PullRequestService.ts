@@ -974,11 +974,47 @@ export const make = Effect.gen(function* () {
         ),
       ),
       Effect.flatMap((projects) =>
-        resolveRemoteHosts(projects, filter).pipe(
-          Effect.map((remoteHosts) => ({ remoteHosts, projects })),
+        Effect.forEach(
+          projects,
+          (project): Effect.Effect<ReadonlyArray<OrchestrationProjectShell>> => {
+            if (
+              project.repositoryIdentity != null &&
+              sourceControlDefinitions.repositorySelector(project.repositoryIdentity) !== null
+            ) {
+              return Effect.succeed([project]);
+            }
+            const trackedFolders = project.trackedFolders ?? [];
+            if (trackedFolders.length === 0) return Effect.succeed([]);
+            return Effect.forEach(
+              trackedFolders,
+              (folder) =>
+                repositoryIdentities
+                  .resolve(folder.path)
+                  .pipe(
+                    Effect.map((repositoryIdentity): ReadonlyArray<OrchestrationProjectShell> =>
+                      repositoryIdentity != null &&
+                      sourceControlDefinitions.repositorySelector(repositoryIdentity) !== null
+                        ? [{ ...project, workspaceRoot: folder.path, repositoryIdentity }]
+                        : [],
+                    ),
+                  ),
+              { concurrency: REPOSITORY_CONCURRENCY },
+            ).pipe(Effect.map((resolved) => resolved.flat()));
+          },
+          { concurrency: REPOSITORY_CONCURRENCY },
+        ).pipe(
+          Effect.map((candidates) => ({
+            projects,
+            candidates: candidates.flat(),
+          })),
         ),
       ),
-      Effect.map(({ remoteHosts, projects }) => {
+      Effect.flatMap(({ projects, candidates }) =>
+        resolveRemoteHosts(candidates, filter).pipe(
+          Effect.map((remoteHosts) => ({ remoteHosts, projects, candidates })),
+        ),
+      ),
+      Effect.map(({ remoteHosts, projects, candidates }) => {
         const supported: SupportedProject[] = [];
         const unimplemented = new Map<
           string,
@@ -987,7 +1023,7 @@ export const make = Effect.gen(function* () {
         const viewerRoots = new Map<string, string[]>();
         const refinedProjectIdsByHost = new Map<string, ProjectId[]>();
         const seen = new Set<string>();
-        for (const project of projects) {
+        for (const project of candidates) {
           if (filter.projectId !== undefined && project.id !== filter.projectId) continue;
           if (filter.projectIds !== undefined && !filter.projectIds.includes(project.id)) continue;
           const identity = project.repositoryIdentity;
@@ -1009,7 +1045,7 @@ export const make = Effect.gen(function* () {
           if (host !== sourceControlDefinitions.changeRequestHost(identity, identity.provider)) {
             const projectIds = refinedProjectIdsByHost.get(host);
             if (projectIds === undefined) refinedProjectIdsByHost.set(host, [project.id]);
-            else projectIds.push(project.id);
+            else if (!projectIds.includes(project.id)) projectIds.push(project.id);
           }
           const registered = registry.get(kind);
           const api = registered?.servesHost?.(host) === false ? null : registered;
@@ -1053,14 +1089,18 @@ export const make = Effect.gen(function* () {
   const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
-        const own = supported[0];
         const repository = ref.repository.trim();
         const host = ref.host?.trim().toLowerCase();
-        if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
-          if (host === undefined || host === own.host) return Effect.succeed(own);
+        const own = supported.find(
+          (candidate) =>
+            candidate.repository.toLowerCase() === repository.toLowerCase() &&
+            (host === undefined || host === candidate.host),
+        );
+        if (own !== undefined) {
+          return Effect.succeed(own);
         }
         if (host === undefined) {
-          if (own === undefined) {
+          if (supported.length === 0) {
             return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
           }
           return Effect.fail(
@@ -1464,10 +1504,15 @@ export const make = Effect.gen(function* () {
         projectTitle: project.title,
         message: `${repository} could not be read.`,
       }));
+    const repositories =
+      input.projectId === undefined
+        ? undefined
+        : [...new Set(projects.map((project) => project.repository))];
     if (readable.length === 0) {
       const listResult: PullRequestListResult = {
         viewers: viewers as PullRequestListResult["viewers"],
         providers,
+        ...(repositories === undefined ? {} : { repositories }),
         entries: [],
         errors: unreadable,
         truncated: false,
@@ -1734,6 +1779,7 @@ export const make = Effect.gen(function* () {
     return {
       viewers: viewers as PullRequestListResult["viewers"],
       providers,
+      ...(repositories === undefined ? {} : { repositories }),
       entries,
       errors: [...unreadable, ...batches.flatMap((batch) => batch.errors)],
       truncated: batches.some((batch) => batch.truncated),
@@ -2922,21 +2968,26 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     if (input.refs.length === 0) return { stats: [] };
     const { supported } = yield* listWorkspaceProjects({});
-    const byProject = new Map(supported.map((project) => [project.project.id, project]));
+    const byProject = new Map(
+      supported.map((project) => [
+        `${project.project.id} ${project.repository.toLowerCase()}`,
+        project,
+      ]),
+    );
     const wanted = new Map<
       string,
       { readonly project: SupportedProject; readonly number: number }
     >();
     for (const ref of input.refs) {
-      const project = byProject.get(ref.projectId);
-      if (
-        project === undefined ||
-        project.api.listChangeRequestStats === undefined ||
-        project.repository.toLowerCase() !== ref.repository.trim().toLowerCase()
-      ) {
+      const repository = ref.repository.trim().toLowerCase();
+      const project = byProject.get(`${ref.projectId} ${repository}`);
+      if (project === undefined || project.api.listChangeRequestStats === undefined) {
         continue;
       }
-      wanted.set(`${project.project.id} ${ref.number}`, { project, number: ref.number });
+      wanted.set(`${project.project.id} ${repository} ${ref.number}`, {
+        project,
+        number: ref.number,
+      });
     }
     const byHost = new Map<string, Array<{ project: SupportedProject; number: number }>>();
     for (const entry of wanted.values()) {
