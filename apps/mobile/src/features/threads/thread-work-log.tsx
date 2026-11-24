@@ -12,6 +12,12 @@ import {
 import { QuestionAnswerHistory } from "./QuestionAnswerHistory";
 import { McpSignInSheet, type McpSignInTarget } from "./McpSignInSheet";
 import { ThreadCommandOutput, useCommandOutputStreaming } from "./thread-command-output";
+import { shellCommandPermissionAtom, useUserShellCommandActions } from "./userShellCommands";
+import {
+  isUserShellItem,
+  type UserShellItem,
+} from "@t3tools/client-runtime/state/user-shell-commands";
+import { useEnvironmentScope } from "../../state/session";
 import {
   getQuestionAnswerPreview,
   hasQuestionAnswer,
@@ -46,8 +52,10 @@ import {
 } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import {
+  AuthOrchestrationOperateScope,
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type EnvironmentId,
+  type OrchestrationV2ProjectedTurnItem,
   type RunId,
   type ThreadId,
   type ToolActivityIcon,
@@ -695,7 +703,9 @@ function ThreadWorkGroupList(props: {
     };
   }, [handleMetricsChange]);
   const getFixedItemSize = (row: ThreadFeedActivity, index: number) =>
-    props.expandedRows[row.id] || props.rowSizing.fixedRowHeight === undefined
+    props.expandedRows[row.id] ||
+    props.rowSizing.fixedRowHeight === undefined ||
+    isUserShellItem(row.projectedItem.item)
       ? undefined
       : props.rowSizing.fixedRowHeight + (index < props.activities.length - 1 ? WORK_ROW_GAP : 0);
   const renderItem = ({ item, index }: { item: ThreadFeedActivity; index: number }) => (
@@ -777,6 +787,64 @@ function EdgeFade(props: { readonly color: string; readonly direction: "up" | "d
 
 function workLogRowKey(row: ThreadFeedActivity): string {
   return row.id;
+}
+
+function UserShellRowActions(props: {
+  readonly environmentId: EnvironmentId;
+  readonly projectedItem: OrchestrationV2ProjectedTurnItem;
+  readonly item: UserShellItem;
+}) {
+  const canOperate = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
+  const canStop = useAtomValue(shellCommandPermissionAtom(props.environmentId));
+  const gt = useGT();
+  const actions = useUserShellCommandActions();
+  const { projectedItem, item } = props;
+  const showStop = canStop && item.status === "running" && item.userShell.backgrounded === true;
+  const showInclude = item.userShell.delivery === "dismissed";
+  // Inherited items belong to the thread they were forked from.
+  if (!canOperate || projectedItem.visibility !== "local" || (!showStop && !showInclude)) {
+    return null;
+  }
+  const target = {
+    environmentId: props.environmentId,
+    threadId: projectedItem.sourceThreadId,
+    itemId: projectedItem.sourceItemId,
+  };
+  return (
+    <View className="ml-7 flex-row items-center gap-5 pb-1.5">
+      {showStop ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt("Stop {command}", { command: item.input })}
+          hitSlop={8}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            void actions.stop(target);
+          }}
+          className="active:opacity-70"
+        >
+          <Text className="font-t3-medium text-xs text-danger-foreground">
+            {gt("Stop", { $context: "button that stops a running shell command" })}
+          </Text>
+        </Pressable>
+      ) : null}
+      {showInclude ? (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            void actions.setDelivery(target, "pending");
+          }}
+          className="active:opacity-70"
+        >
+          <Text className="font-t3-medium text-xs text-primary-text">
+            {gt("Include in next message")}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 function WorkspacePreparationRetryButton(props: {
@@ -1241,6 +1309,13 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           </View>
         </View>
       </WorkLogPressable>
+      {isUserShellItem(row.projectedItem.item) ? (
+        <UserShellRowActions
+          environmentId={props.environmentId}
+          projectedItem={row.projectedItem}
+          item={row.projectedItem.item}
+        />
+      ) : null}
       {mcpSignInOpen && mcpSignInTarget !== null ? (
         <McpSignInSheet
           environmentId={props.environmentId}

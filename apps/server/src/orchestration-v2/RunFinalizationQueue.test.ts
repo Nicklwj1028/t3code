@@ -1,3 +1,4 @@
+import * as ShellCommandService from "./ShellCommandService.ts";
 import { assert, it } from "@effect/vitest";
 import { CheckpointScopeId, CommandId, GitCommandError, RunId, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -90,6 +91,7 @@ const makeWorker = (
     ),
   );
   const executor = EffectWorker.layerExecutor.pipe(
+    Layer.provide(Layer.mock(ShellCommandService.ShellCommandService)({})),
     Layer.provide(
       Layer.mergeAll(
         finalization,
