@@ -2106,6 +2106,10 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
     Effect.gen(function* () {
       const { session, providerThread, startTurn, throughPromptSettled } =
         yield* openSessionWithRunningCommand({ WaitMsBeforeAsync: 10000 });
+      assert.isTrue(
+        session.providerSession.capabilities.tools.supportsBackgroundWait,
+        "Antigravity must advertise supportsBackgroundWait so t3_background_wait is exposed",
+      );
       yield* startTurn(1, false);
       yield* throughPromptSettled;
       const taskIds = ["mock-session-1/task-2"];
@@ -2116,6 +2120,64 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
         awaited: true,
       });
       assert.deepEqual(result.matched, taskIds);
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  // `waiting=false` lets the run end while the command keeps running, as with a daemon.
+  it.effect("ends the run when t3_background_wait releases a running command", () =>
+    Effect.gen(function* () {
+      const { session, providerThread, command, offers, send, startTurn, ...run } =
+        yield* openSessionWithRunningCommand({ WaitMsBeforeAsync: 10000 });
+      yield* startTurn(1, false);
+      const beforeRelease = yield* run.throughPromptSettled;
+      const originalCommandItem = beforeRelease.findLast(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId,
+      );
+      assert.isDefined(originalCommandItem);
+      const taskIds = ["mock-session-1/task-2"];
+      const released = yield* session.awaitBackgroundTasks!({
+        providerThread,
+        taskIds,
+        awaited: false,
+      });
+      assert.deepEqual(released.matched, taskIds);
+      yield* TestClock.adjust("5 seconds");
+      const settledEvents = yield* run.throughTerminal;
+      const terminal = settledEvents.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
+      assert.equal(run.cancels(), 0, "releasing a running command must not cancel it");
+      const itemAtSettle = [...beforeRelease, ...settledEvents].findLast(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId,
+      );
+      assert.equal(
+        itemAtSettle?.type === "turn_item.updated" && itemAtSettle.turnItem.status,
+        "running",
+        "releasing a running command must not mark its tool row completed before it finishes",
+      );
+
+      yield* send({
+        sessionUpdate: "tool_call_update",
+        ...command,
+        status: "completed",
+        rawOutput: { output: "Command exited with code 0.", exit_code: 0 },
+      });
+      const completedUpdate = (yield* run.until(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId &&
+          event.turnItem.status === "completed",
+      )).at(-1);
+      assert.equal(
+        completedUpdate?.type === "turn_item.updated" && completedUpdate.turnItem.id,
+        originalCommandItem?.type === "turn_item.updated" && originalCommandItem.turnItem.id,
+        "eventual completion must update the released command's original row",
+      );
+      assert.include(JSON.stringify(completedUpdate), "Command exited with code 0.");
+      assert.lengthOf(offers, 1, "the released command still wakes the thread when it ends");
     }).pipe(Effect.provide(layerSession)),
   );
 
