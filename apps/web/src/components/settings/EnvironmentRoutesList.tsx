@@ -22,11 +22,12 @@ import {
   connectionRouteAddress,
   connectionRouteId,
   connectionRouteLabelText,
+  connectionRouteMcpUrl,
   connectionRoutes,
   isLearned,
   pendingRouteOrder,
 } from "@t3tools/client-runtime/connection";
-import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
+import { CopyIcon, GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import { T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
@@ -41,10 +42,14 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function EnvironmentRoutesList({
   environment,
+  relayHttpBaseUrl,
   onAddRoute,
+  onCopyMcpUrl,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly relayHttpBaseUrl: string | undefined;
   readonly onAddRoute: () => void;
+  readonly onCopyMcpUrl: (url: string) => void;
 }) {
   const saved = connectionRoutes(environment.entry);
   const savedIds = saved.map((route) => connectionRouteId(route.target));
@@ -121,8 +126,10 @@ export function EnvironmentRoutesList({
                 route={route}
                 position={index + 1}
                 inUse={connectionRouteId(route.target) === activeRouteId}
+                mcpUrl={connectionRouteMcpUrl(route, relayHttpBaseUrl)}
                 refused={environment.refusedRouteIds.includes(connectionRouteId(route.target))}
                 removable={canRemoveRoute(routes, route)}
+                onCopyMcpUrl={onCopyMcpUrl}
                 onRemove={() => void confirmRemove(route)}
               />
             ))}
@@ -143,15 +150,19 @@ function SortableRouteRow({
   route,
   position,
   inUse,
+  mcpUrl,
   refused,
   removable,
+  onCopyMcpUrl,
   onRemove,
 }: {
   readonly route: ConnectionRoute;
   readonly position: number;
   readonly inUse: boolean;
+  readonly mcpUrl: string | null;
   readonly refused: boolean;
   readonly removable: boolean;
+  readonly onCopyMcpUrl: (url: string) => void;
   readonly onRemove: () => void;
 }) {
   const gt = useGT();
@@ -204,6 +215,24 @@ function SortableRouteRow({
           </p>
         ) : null}
       </div>
+      {mcpUrl !== null ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost-muted"
+                size="icon-xs"
+                aria-label={gt("Copy {route} MCP URL", { route: label })}
+                onClick={() => onCopyMcpUrl(mcpUrl)}
+              />
+            }
+          >
+            <CopyIcon className="size-3" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">{gt("Copy MCP URL")}</TooltipPopup>
+        </Tooltip>
+      ) : null}
       <button
         type="button"
         ref={setActivatorNodeRef}
