@@ -2,7 +2,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Deferred from "effect/Deferred";
 
@@ -18,6 +20,7 @@ import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";
+let antigravityInitialThinking: string | undefined;
 // GitHub Copilot CLI advertises URL-shaped session mode ids.
 const copilotModesProfile = process.env.T3_ACP_COPILOT_MODES === "1";
 const copilotModeId = (name: string) =>
@@ -172,6 +175,18 @@ function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
         currentValue: currentModelId,
         options: antigravityModels.map((model) => ({ value: model.modelId, name: model.name })),
       },
+      ...(antigravityInitialThinking === undefined
+        ? []
+        : [
+            {
+              configId: "reasoning",
+              name: "Thinking level",
+              category: "thought_level" as const,
+              type: "select" as const,
+              currentValue: currentReasoning,
+              options: ["medium", "high"].map((value) => ({ value, name: value })),
+            },
+          ]),
       {
         configId: "mode",
         name: "Mode",
@@ -510,6 +525,10 @@ function emitGrokKillTaskScenario(
 }
 
 const program = Effect.gen(function* () {
+  antigravityInitialThinking = Option.getOrUndefined(
+    yield* Config.option(Config.String("T3_ACP_ANTIGRAVITY_INITIAL_THINKING")),
+  );
+  currentReasoning = antigravityInitialThinking ?? currentReasoning;
   const agent = yield* EffectAcpAgent.AcpAgent;
   const nativeCancelRequested = yield* Deferred.make<void>();
   const nativeCancelRelease = yield* Deferred.make<void>();
@@ -893,6 +912,7 @@ const program = Effect.gen(function* () {
       }
       if (request.configId === "model" && typeof request.value === "string") {
         currentModelId = request.value;
+        if (antigravityInitialThinking !== undefined) currentReasoning = "medium";
       }
       if (request.configId === "agent" && typeof request.value === "string") {
         currentAgent = request.value;
