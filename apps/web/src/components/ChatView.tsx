@@ -332,6 +332,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
+import { ThreadServersDiscovery } from "./chat/ThreadServersPanel";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   offersWorkspaceModes,
@@ -3547,6 +3548,10 @@ export default function ChatView(props: ChatViewProps) {
         />
       )}
       {rightPanelControlsAtRoot && !embedded ? panelLayoutControls : null}
+      {/* Discovery polls ports, so it runs only while this thread can be starting servers. */}
+      {!draftId && activeThread && (runningTerminalIds.length > 0 || isWorking) ? (
+        <ThreadServersDiscovery environmentId={activeThread.environmentId} />
+      ) : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
