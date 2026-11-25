@@ -386,6 +386,8 @@ describe("readAntigravityUsage", () => {
             "gemini-pro-orchestrator-neon",
             "gemini-4-hydrogen-orchestrator",
             "gemini-pro-orchestrator-g1-pro",
+            "gemini-4-hydrogen-tiered-high",
+            "gemini-3-flash-agent-high",
           ].entries()) {
             yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
               idx,
@@ -416,9 +418,21 @@ describe("readAntigravityUsage", () => {
           ["gemini-pro-orchestrator-neon", "gemini-4-neon"],
           ["gemini-4-hydrogen-orchestrator", "gemini-4-hydrogen"],
           ["gemini-pro-orchestrator-g1-pro", "gemini-4-argon"],
+          ["gemini-4-hydrogen-tiered-high", "gemini-4-hydrogen"],
+          ["gemini-3-flash-agent-high", "gemini-3.5-flash"],
           ["gemini-pro-orchestrator-neon", "gemini-4-neon"],
         ],
       );
+      const table = parseRateTable({
+        "gemini-4-hydrogen": { input_cost_per_token: 1e-6, output_cost_per_token: 4e-6 },
+      });
+      const hydrogen = records(result).find(
+        ({ model }) => model === "gemini-4-hydrogen-tiered-high",
+      );
+      assert.ok(hydrogen);
+      const priced = priceUsage(table, hydrogen);
+      assert.strictEqual(priced.costSource, "modelPriced");
+      assert.closeTo(priced.costUsd, 19e-6, 1e-12);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

@@ -129,13 +129,10 @@ const MODEL_IDS: Record<number, string> = {
   1537: "gemini-pro-orchestrator-neon",
 };
 
-// Effort and routing variants share the base model's price.
-export const antigravityRateModel = (model: string) => {
-  const base = model.replace(
-    /-(?:extra-low|low|medium|high|tiered|control|thinking|agent|orchestrator)$/,
-    "",
-  );
-  return /^gemini-3-flash-(?:agent(?:-[ab])?|[ab])$/.test(model)
+const VARIANT_SUFFIX = /-(?:extra-low|low|medium|high|tiered|control|thinking|agent|orchestrator)$/;
+
+const aliasRateModel = (model: string) =>
+  /^gemini-3-flash-(?:agent(?:-[ab])?|[ab])$/.test(model)
     ? "gemini-3.5-flash"
     : model === "gemini-3.7-flash-safety-le"
       ? "gemini-3.7-flash"
@@ -143,9 +140,19 @@ export const antigravityRateModel = (model: string) => {
         ? "gemini-4-neon"
         : model === "gemini-pro-orchestrator-g1-pro"
           ? "gemini-4-argon"
-          : base === "gemini-3-flash"
+          : model === "gemini-3-flash"
             ? "gemini-3-flash-preview"
-            : base;
+            : undefined;
+
+// Effort and routing variants share the base model's price; they can stack, as in -tiered-high.
+export const antigravityRateModel = (model: string) => {
+  let name = model;
+  let alias = aliasRateModel(name);
+  while (alias === undefined && VARIANT_SUFFIX.test(name)) {
+    name = name.replace(VARIANT_SUFFIX, "");
+    alias = aliasRateModel(name);
+  }
+  return alias ?? name;
 };
 
 function withRateModel(record: UsageRecord): UsageRecord {
