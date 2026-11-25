@@ -2,7 +2,7 @@ import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { turnChanges, turnHasChanges } from "@t3tools/client-runtime/state/thread-repositories";
-import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
+import type { OrchestrationGetTurnDiffResult, ReviewDiffPreviewSource } from "@t3tools/contracts";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
@@ -40,6 +40,8 @@ export interface ReviewSectionItem {
   readonly files?: ReviewDiffPreviewSource["files"];
   readonly truncated?: boolean;
   readonly source?: ReviewGitSource;
+  /** The revisions a turn diff compares; absent from older servers. */
+  readonly turnSource?: OrchestrationGetTurnDiffResult["source"];
   /** Set when a turn's patch spans more than one folder. */
   readonly repositoryGroups?: ReadonlyArray<ReviewRepositoryGroup>;
   /** Repositories the turn changed that have nothing recorded before it to compare with. */
