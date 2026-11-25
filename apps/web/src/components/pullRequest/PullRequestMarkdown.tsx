@@ -32,6 +32,8 @@ export const PullRequestMarkdownContext = createContext<{
   repository: string | null;
 } | null>(null);
 
+// Takes the fields, not the detail: the detail is rebuilt whenever any of its queries changes
+// state, and a new context value re-renders every markdown block in the panel.
 export function pullRequestMarkdownContext(
   provider: string | null,
   url: string | null,
