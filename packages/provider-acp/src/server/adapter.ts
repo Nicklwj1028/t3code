@@ -654,6 +654,7 @@ export interface AcpAdapterV2Flavor {
     ) => Effect.Effect<void, EffectAcpErrors.AcpError>;
   };
   readonly runtimeHarness?: string;
+  readonly additionalRuntimeInstructions?: string;
   readonly registerExtensions?: (
     context: AcpAdapterV2ExtensionContext,
   ) => Effect.Effect<void, EffectAcpErrors.AcpError>;
@@ -5188,6 +5189,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   ...base,
                   type: "command_execution",
                   input: toolCall.command ?? monitorCommand ?? "",
+                  ...(context.promptSettled &&
+                  status === "running" &&
+                  flavor.toolOutlivesPrompt?.(toolCall) === true
+                    ? { awaitingCompletion: true as const }
+                    : {}),
                   ...(textFromUnknown(rawOutput) === undefined
                     ? {}
                     : { output: textFromUnknown(rawOutput) }),
@@ -9370,7 +9376,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               : { previousState: previousInstructionState }),
           });
           const sessionSetup = yield* Ref.get(activeSessionSetup);
-          const runtimeInstructions = buildRuntimeInstructions({
+          const baseRuntimeInstructions = buildRuntimeInstructions({
             agentFeedback: instructionState.hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
             harness: flavor.runtimeHarness ?? driver,
             model: turnInput.modelSelection.model,
@@ -9379,6 +9385,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               sessionSetup === null ||
               flavor.sessionCarriesPullRequestLinking?.(sessionSetup.initializeResult) !== true,
           });
+          const runtimeInstructions =
+            flavor.additionalRuntimeInstructions === undefined
+              ? baseRuntimeInstructions
+              : `${baseRuntimeInstructions}\n\n${flavor.additionalRuntimeInstructions}`;
           // The agent keeps its own history, so resend only after compaction or when the text changes.
           const sendRuntimeInstructions =
             !isNativeSlashCommand &&
@@ -9671,6 +9681,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       : false;
                   if (context.finalized) return;
                   if (deferredBackgroundWork || pendingReply) {
+                    if (deferredBackgroundWork && flavor.toolOutlivesPrompt !== undefined) {
+                      for (const tool of context.tools.values()) {
+                        if (
+                          toolStatus(tool.status) === "running" &&
+                          flavor.toolOutlivesPrompt(tool)
+                        ) {
+                          yield* emitTool(context, tool, "running");
+                        }
+                      }
+                    }
                     yield* closeTextStreams(context);
                     yield* schedulePostSettleHoldExpiry(context);
                     if (pendingReply) {
