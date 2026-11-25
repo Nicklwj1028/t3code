@@ -83,6 +83,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
@@ -475,6 +476,9 @@ it.each([
 function makeLocalCommandHarness(input: {
   readonly text: string;
   readonly manualContinuation?: boolean;
+  readonly restartContinuation?: boolean;
+  readonly outputSchema?: Readonly<Record<string, Schema.Json>>;
+  readonly mcpSession?: "unbound" | "bound";
   readonly nativeResumeUnsupported?: boolean;
   readonly steeringRestart?: boolean;
   readonly nativeGoals?: boolean;
@@ -491,6 +495,7 @@ function makeLocalCommandHarness(input: {
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
   readonly createdBy?: "agent" | "system";
+  readonly creationSource?: "provider";
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly logoutFailure?: string;
   readonly openFailure?: unknown;
@@ -546,6 +551,8 @@ function makeLocalCommandHarness(input: {
   const messageId = MessageId.make("message-native-account-command");
   const run: OrchestrationV2ThreadProjection["runs"][number] = {
     ...(input.manualContinuation ? { manualContinuationOfRunId: RunId.make("stopped-run") } : {}),
+    ...(input.restartContinuation ? { restartContinuationOfRunId: RunId.make("stopped-run") } : {}),
+    ...(input.outputSchema === undefined ? {} : { outputSchema: input.outputSchema }),
     id: runId,
     threadId,
     ordinal: 2,
@@ -591,7 +598,7 @@ function makeLocalCommandHarness(input: {
     attachments: [],
     streaming: false,
     createdBy: input.createdBy ?? "user",
-    creationSource: input.createdBy === undefined ? "web" : "mcp",
+    creationSource: input.creationSource ?? (input.createdBy === undefined ? "web" : "mcp"),
     ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
     createdAt: now,
     updatedAt: now,
@@ -1236,7 +1243,12 @@ function makeLocalCommandHarness(input: {
               ...runInput,
               messageId: runInput.message.messageId,
             } as never)
-          : runInput.session.startTurn(runInput as never)
+          : runInput.session.startTurn({
+              ...runInput,
+              ...(runInput.run.restartContinuationOfRunId === undefined
+                ? {}
+                : { restartContinuationOfRunId: runInput.run.restartContinuationOfRunId }),
+            } as never)
         ).pipe(Effect.orDie)
       : input.failReadsAfterRunning === true || input.previousTurn !== undefined
         ? Effect.suspend(() =>
@@ -1447,6 +1459,23 @@ function makeLocalCommandHarness(input: {
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
+        ...(input.mcpSession === undefined
+          ? []
+          : [
+              Layer.mock(McpProviderSessions.McpProviderSessions)({
+                read: () =>
+                  Effect.succeed({
+                    environmentId: EnvironmentId.make("env-native-account-command"),
+                    threadId,
+                    providerSessionId: "mcp-session-native-account-command",
+                    providerInstanceId: newInstanceId,
+                    ...(input.mcpSession === "bound" ? { runId, attemptId } : {}),
+                    endpoint: "http://127.0.0.1:43123/mcp",
+                    authorizationHeader: "Bearer test-token",
+                    browserToolsAvailable: false,
+                  }),
+              }),
+            ]),
       ),
     ),
   );
@@ -2390,6 +2419,55 @@ effectIt.effect("sends new steering text when restarting a manual continuation",
     yield* harness.start;
     expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe("New steering instruction");
     expect(harness.startRootRun.mock.calls[0]?.[0].resume).toBe(false);
+
+    // A typed continuation prompts with its own runId on any credential: a call naming the run it
+    // continues may be that stopped run's late one.
+    for (const mcpSession of ["unbound", "bound"] as const) {
+      const manual = makeLocalCommandHarness({
+        text: "",
+        manualContinuation: true,
+        outputSchema: { type: "object" },
+        mcpSession,
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* manual.start;
+      const manualTurn = manual.startTurn.mock.calls[0]?.[0];
+      expect(manualTurn?.resume).toBeUndefined();
+      expect(manualTurn?.message.text).toContain("Continue where you left off.");
+      expect(manualTurn?.message.text).toContain("run-native-account-command");
+      expect(manualTurn?.inlineContextLength).toBeUndefined();
+
+      const restart = makeLocalCommandHarness({
+        text: "Continue where you left off.",
+        restartContinuation: true,
+        outputSchema: { type: "object" },
+        mcpSession,
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* restart.start;
+      expect(restart.startTurn.mock.calls[0]?.[0].restartContinuationOfRunId).toBeUndefined();
+    }
+  }),
+);
+
+effectIt.effect("opens a turn the provider started on the MCP credential it holds", () =>
+  Effect.gen(function* () {
+    for (const [creationSource, expected] of [
+      ["provider", true],
+      [undefined, undefined],
+    ] as const) {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        createdBy: "agent",
+        ...(creationSource === undefined ? {} : { creationSource }),
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* harness.start;
+      const [opened] = harness.open.mock.calls[0] as unknown as [
+        { readonly providerStartedTurn?: boolean },
+      ];
+      expect(opened.providerStartedTurn).toBe(expected);
+    }
   }),
 );
 
@@ -2416,6 +2494,21 @@ effectIt.effect("refuses unsupported resume instead of manufacturing a user prom
         }),
       ]),
     );
+
+    // A typed resume is prompted with its own output note, which needs no native resume.
+    const typed = makeLocalCommandHarness({
+      text: "",
+      manualContinuation: true,
+      nativeResumeUnsupported: true,
+      outputSchema: { type: "object" },
+      mcpSession: "bound",
+      sideChat: { contextRun: "delivered" },
+    });
+    yield* typed.start;
+    const typedTurn = typed.startTurn.mock.calls[0]?.[0];
+    expect(typedTurn?.resume).toBeUndefined();
+    expect(typedTurn?.message.text).toContain("run-native-account-command");
+    expect(typed.settledRuns).not.toContain("failed");
   }),
 );
 
@@ -3449,6 +3542,46 @@ effectIt.effect("fails the run instead of replacing a native thread another clie
       },
     ]);
   }),
+);
+
+effectIt.effect(
+  "fails the run instead of replacing a native thread when active background work blocks MCP rotation",
+  () =>
+    Effect.gen(function* () {
+      const blockedError = new ProviderAdapter.ProviderAdapterMcpRotationBlockedError({
+        driver: ProviderDriverKind.make("codex"),
+        providerSessionId: ProviderSessionId.make("provider-session-mcp-blocked"),
+        providerThreadId: ProviderThreadId.make("new-provider-thread"),
+        reason: "background_work",
+      });
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        resumeFailure: blockedError,
+      });
+
+      const exit = yield* Effect.exit(harness.start);
+
+      expect(harness.fallbackEnsureThread).not.toHaveBeenCalled();
+      expect(exit._tag).toBe("Success");
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      const projection = harness.projection();
+      expect(projection.providerThreads.at(-1)?.nativeThreadRef?.nativeId).toBe(
+        "native-resume-thread",
+      );
+      expect(projection.contextHandoffs).toEqual([]);
+      expect(projection.runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
+      expect(projection.turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Provider turn failed to start",
+          failure: {
+            class: "provider_error",
+            message:
+              "Cannot refresh MCP credentials while background work is running on this thread.",
+          },
+        },
+      ]);
+    }),
 );
 
 effectIt.effect("does not mistake a failed state read for a superseded run", () =>

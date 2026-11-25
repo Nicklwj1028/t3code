@@ -95,7 +95,7 @@ import {
 } from "./contextBoundary.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
 import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
-import { outputRequestProblem } from "./runOutput.ts";
+import { outputRequestProblem, resolveOwedOutputRun } from "./runOutput.ts";
 import { recordThreadOpen } from "@t3tools/shared/paletteSearch";
 import { isSlashCommand } from "@t3tools/shared/composerTrigger";
 import {
@@ -232,6 +232,18 @@ import * as ServerSettings from "../serverSettings.ts";
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
 );
+
+export class RunOutputDispatchRejectionError extends Schema.TaggedError<RunOutputDispatchRejectionError>()(
+  "RunOutputDispatchRejectionError",
+  {
+    reason: Schema.Literals(["stale_caller", "stopped", "inactive"]),
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
   "OrchestratorDispatchError",
@@ -12519,23 +12531,65 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Run ${command.runId} was not asked for a result.`,
       });
     }
-    // The service picks the active run, but the run can end before this command is its turn. A
-    // turn that completed without its result still owes it, and a later turn may give it.
-    const owes = run.status === "completed" && run.output === undefined;
-    if (!isActiveRun(run) && !owes) {
-      return yield* new OrchestratorDispatchError({
+    const rejectOutput = (reason: RunOutputDispatchRejectionError["reason"], detail: string) =>
+      new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Run ${command.runId} is ${run.status} and takes no result.`,
+        cause: new RunOutputDispatchRejectionError({ reason, detail }),
       });
+    // The service picks the active run, but the run can end before this command is its turn. A
+    // turn that completed without its result still owes it, and a later turn may give it.
+    const owes =
+      run.status === "completed" &&
+      run.output === undefined &&
+      (yield* resolveOwedOutputRun(projection.runs, () =>
+        projectionStore.getThreadRecords(command.threadId, ["runs", "turnItems"], {
+          turnItemTypes: ["user_message"],
+        }),
+      ).pipe(mapDispatchError(command)))?.id === run.id;
+    if (!isActiveRun(run) && !owes) {
+      return yield* rejectOutput(
+        "inactive",
+        `Run ${command.runId} is ${run.status} and takes no result.`,
+      );
+    }
+    if (command.callerRunId !== undefined || command.callerAttemptId !== undefined) {
+      let active: OrchestrationV2Run | undefined;
+      for (const candidate of projection.runs) {
+        if (
+          isActiveRun(candidate) &&
+          (active === undefined || candidate.ordinal > active.ordinal)
+        ) {
+          active = candidate;
+        }
+      }
+      const matchesRun = (candidate: OrchestrationV2Run) =>
+        (command.callerRunId === undefined || candidate.id === command.callerRunId) &&
+        (command.callerAttemptId === undefined ||
+          candidate.activeAttemptId === command.callerAttemptId);
+      const callerAllowed =
+        (active !== undefined && matchesRun(active)) || (owes && matchesRun(run));
+      if (!callerAllowed) {
+        return yield* rejectOutput(
+          "stale_caller",
+          `Caller run ${command.callerRunId ?? "unknown"} is no longer active on thread ${command.threadId}.`,
+        );
+      }
+      // A wake on an unbound credential names the owed run, so its calls cannot be told apart.
+      if (
+        active !== undefined &&
+        active.id !== run.id &&
+        (yield* stopReachedRun(command, command.threadId, active.id))
+      ) {
+        return yield* rejectOutput("stopped", `Run ${active.id} was stopped and takes no result.`);
+      }
     }
     // A stopped run stays active until its provider settles; what it submits then is not kept.
     if (yield* stopReachedRun(command, command.threadId, run.id)) {
-      return yield* new OrchestratorDispatchError({
-        commandId: command.commandId,
-        commandType: command.type,
-        cause: `Run ${command.runId} was stopped and takes no result.`,
-      });
+      return yield* rejectOutput(
+        "stopped",
+        `Run ${command.runId} was stopped and takes no result.`,
+      );
     }
     const now = yield* DateTime.now;
     yield* emit(

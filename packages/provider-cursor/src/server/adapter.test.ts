@@ -3467,21 +3467,31 @@ describe("CursorAdapterV2", () => {
         assert.deepEqual(openedWith?.mcpServers, t3Servers);
         yield* sendTurn(1);
         assert.deepEqual(sentWith[0], { ...expectedServers, ...t3Servers });
-        // A server switched off between turns stays off on the next one.
+        // A server switched off between turns stays off on the next one, and rotated MCP auth propagates.
         yield* fileSystem.writeFileString(
           path.join(home, ".cursor", "projects", projectDirectory, "mcp-disabled.json"),
           JSON.stringify(["off", "repro"]),
         );
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("cursor-mcp-environment"),
+          threadId,
+          providerSessionId: "cursor-mcp-session-2",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer rotated-cursor-token",
+          browserToolsAvailable: false,
+        });
+        const rotatedT3Servers = cursorMcpServers(yield* mcpSessions.read(threadId));
         yield* sendTurn(2);
         const { repro: _disabled, ...stillEnabled } = expectedServers;
-        assert.deepEqual(sentWith[1], { ...stillEnabled, ...t3Servers });
+        assert.deepEqual(sentWith[1], { ...stillEnabled, ...rotatedT3Servers });
         // Unreadable disabled state starts none of the overrides, and the turn still goes out.
         yield* fileSystem.writeFileString(
           path.join(home, ".cursor", "projects", projectDirectory, "mcp-disabled.json"),
           "[",
         );
         yield* sendTurn(3);
-        assert.deepEqual(sentWith[2], t3Servers);
+        assert.deepEqual(sentWith[2], rotatedT3Servers);
         // A restricted turn starts no command the checkout names; the user's own file still applies.
         yield* fileSystem.writeFileString(
           path.join(home, ".cursor", "projects", projectDirectory, "mcp-disabled.json"),
@@ -3493,7 +3503,7 @@ describe("CursorAdapterV2", () => {
           yield* sendTurn(4 + index, { ...runtimePolicy, runtimeMode });
           assert.deepEqual(sentWith[3 + index], {
             repro: { command: "node", args: [`${home}/shadowed.mjs`], cwd: projectRoot },
-            ...t3Servers,
+            ...rotatedT3Servers,
           });
         }
         yield* fileSystem.writeFileString(

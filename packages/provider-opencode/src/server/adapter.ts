@@ -1098,19 +1098,29 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           hasT3Mcp,
           mcpSession?.capabilities?.has("device") === true,
         );
-        if (hasT3Mcp) {
+        let appliedMcpAuthorization: string | undefined;
+        const syncT3Mcp = Effect.fnUntraced(function* (mcp: typeof mcpSession) {
+          if (
+            mcp === undefined ||
+            connection.external ||
+            mcp.authorizationHeader === appliedMcpAuthorization
+          ) {
+            return;
+          }
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
               name: "t3-code",
               config: {
                 type: "remote",
-                url: mcpSession.endpoint,
-                headers: { Authorization: mcpSession.authorizationHeader },
+                url: mcp.endpoint,
+                headers: { Authorization: mcp.authorizationHeader },
                 oauth: false,
               },
             }),
           );
-        }
+          appliedMcpAuthorization = mcp.authorizationHeader;
+        });
+        yield* syncT3Mcp(mcpSession);
 
         const now = yield* DateTime.now;
         let sessionEntity: OrchestrationV2ProviderSession = {
@@ -3631,6 +3641,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           driver: OPENCODE_PROVIDER,
           providerSessionId: input.providerSessionId,
           providerSession: sessionEntity,
+          mcpCredentialRotation: "live",
           events: Stream.fromEffectRepeat(Queue.take(events)),
           hasPendingBackgroundWork: Effect.sync(
             () =>
@@ -3756,6 +3767,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
               }
               yield* applyPermissionRules(state, turnInput.runtimePolicy);
+              yield* syncT3Mcp(yield* mcpSessions.read(turnInput.threadId));
               // A continuation admits a wake OpenCode is already running, so it sends no prompt.
               const isCompaction =
                 !continuation &&

@@ -1,9 +1,97 @@
-import { parseGoalCommand } from "@t3tools/contracts";
+import {
+  type OrchestrationV2Run,
+  type OrchestrationV2ThreadProjection,
+  parseGoalCommand,
+  type RunId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as JsonSchema from "effect/JsonSchema";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SchemaRepresentation from "effect/SchemaRepresentation";
+
+import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { contextBoundaryOrdinal } from "./contextBoundary.ts";
+
+/**
+ * Latest completed run on the thread that still owes a typed result, ignoring context boundaries.
+ * Only the newest started run asked for a result can owe it.
+ */
+export function latestOwedOutputRun<
+  TRun extends {
+    readonly id: RunId;
+    readonly ordinal: number;
+    readonly status: OrchestrationV2Run["status"];
+    readonly startedAt?: OrchestrationV2Run["startedAt"];
+    readonly restartContinuationOfRunId?: OrchestrationV2Run["restartContinuationOfRunId"];
+    readonly outputSchema?: unknown;
+    readonly output?: unknown;
+  },
+>(runs: ReadonlyArray<TRun>): TRun | undefined {
+  let asked: TRun | undefined;
+  for (const candidate of runs) {
+    if (
+      candidate.outputSchema !== undefined &&
+      candidate.status !== "queued" &&
+      !cancelledBeforeStart({
+        status: candidate.status,
+        startedAt: candidate.startedAt ?? null,
+        ...(candidate.restartContinuationOfRunId === undefined
+          ? {}
+          : { restartContinuationOfRunId: candidate.restartContinuationOfRunId }),
+      }) &&
+      (asked === undefined || candidate.ordinal > asked.ordinal)
+    ) {
+      asked = candidate;
+    }
+  }
+  return asked?.status === "completed" && asked.output === undefined ? asked : undefined;
+}
+
+/**
+ * Latest completed run that still owes a typed result and remains reachable in the agent's
+ * current conversation. Loads `turnItems` only when a later fresh-context run exists.
+ */
+export const resolveOwedOutputRun = <E, R>(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  loadContextRecords: () => Effect.Effect<
+    Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+    E,
+    R
+  >,
+): Effect.Effect<OrchestrationV2Run | undefined, E, R> => {
+  const owing = latestOwedOutputRun(runs);
+  if (
+    owing === undefined ||
+    !runs.some((later) => later.freshContext === true && later.ordinal > owing.ordinal)
+  ) {
+    return Effect.succeed(owing);
+  }
+  return loadContextRecords().pipe(
+    Effect.map((records) => (contextBoundaryOrdinal(records) > owing.ordinal ? undefined : owing)),
+  );
+};
+
+/** Whether a turn's MCP credential must name its run: it asked for a result or may answer an owed one. */
+export const runRequiresRunScopedMcp = <E, R>(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  runId: RunId | undefined,
+  loadContextRecords: () => Effect.Effect<
+    Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+    E,
+    R
+  >,
+): Effect.Effect<boolean, E, R> => {
+  if (
+    runId !== undefined &&
+    runs.some((candidate) => candidate.id === runId && candidate.outputSchema !== undefined)
+  ) {
+    return Effect.succeed(true);
+  }
+  return resolveOwedOutputRun(runs, loadContextRecords).pipe(
+    Effect.map((owed) => owed !== undefined),
+  );
+};
 
 type OutputSchema = Readonly<Record<string, Schema.Json>>;
 
@@ -46,10 +134,10 @@ export const outputRequestProblem = (
     : outputSchemaProblem(schema);
 
 /** Appended to the turn's prompt: the agent learns the shape and how to hand the result back. */
-export const outputInstructions = (schema: OutputSchema): string =>
+export const outputInstructions = (schema: OutputSchema, runId: RunId): string =>
   [
     "A program reads the result of this turn, not a person.",
-    "When the work is done, call the `t3_submit_output` tool once with `json` set to JSON text matching this JSON Schema:",
+    `When the work is done, call the \`t3_submit_output\` tool once with \`runId\` set to \`${runId}\` and \`json\` set to JSON text matching this JSON Schema:`,
     JSON.stringify(schema),
     "If you could not finish, still submit, with the fields that say so. A rejected submission names what did not fit: correct it and submit again.",
   ].join("\n");

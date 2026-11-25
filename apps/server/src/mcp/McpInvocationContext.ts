@@ -8,6 +8,8 @@ import {
   type ProviderInstanceId,
   type ProviderInteractionMode,
   type OrchestrationV2LinkedSender,
+  type RunAttemptId,
+  type RunId,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -32,6 +34,8 @@ export interface McpThreadCaller {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly runId?: RunId | undefined;
+  readonly attemptId?: RunAttemptId | undefined;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
 }

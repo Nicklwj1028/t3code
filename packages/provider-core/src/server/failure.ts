@@ -146,6 +146,7 @@ function curatedCauseMessages(cause: unknown): {
         case "CodexAppServerRetiredError":
         case "ProviderSetupError":
         case "ProviderAdapterThreadInUseError":
+        case "ProviderAdapterMcpRotationBlockedError":
         case "ProviderCompactionUnsupportedError":
           return { known: stringField(cause, "message"), category: categoryMessage() };
         case "CodexAppServerRequestError": {

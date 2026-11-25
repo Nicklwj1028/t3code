@@ -5876,6 +5876,65 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  it.effect("removes and re-registers T3 MCP when its bearer token rotates between turns", () =>
+    Effect.gen(function* () {
+      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+      const setMcp = (ordinal: number) =>
+        mcpSessions.set({
+          environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+          threadId,
+          providerSessionId: `mcp:opencode2-rotate-${ordinal}`,
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:3773/mcp",
+          authorizationHeader: `Bearer opencode2-run-${ordinal}`,
+          browserToolsAvailable: false,
+        });
+      yield* setMcp(1);
+      yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+      const server = "t3-code-thread_opencode2-adapter";
+      const addFor = (authorization: string) =>
+        out("mcp.add", {
+          server,
+          "location[directory]": WORK,
+          config: {
+            type: "remote",
+            url: "http://127.0.0.1:3773/mcp",
+            headers: { Authorization: authorization },
+            oauth: false,
+          },
+        });
+      const turn = [
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ];
+      const { runtime, thread } = yield* resumed([
+        addFor("Bearer opencode2-run-1"),
+        reply("mcp.add", null),
+        ...turn,
+        out("mcp.remove", { server, "location[directory]": WORK }),
+        reply("mcp.remove", null),
+        addFor("Bearer opencode2-run-2"),
+        reply("mcp.add", null),
+        ...turn,
+        out("mcp.remove", { server, "location[directory]": WORK }),
+        reply("mcp.remove", null),
+      ]);
+      assert.equal(runtime.mcpCredentialRotation, "live");
+      const runTurn = Effect.fnUntraced(function* () {
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        const started = yield* runtime.startTurn(turnInput(thread)).pipe(Effect.forkScoped);
+        yield* TestClock.adjust("250 millis");
+        yield* Fiber.join(started);
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      });
+
+      yield* runTurn();
+      yield* setMcp(2);
+      yield* runTurn();
+    }),
+  );
+
   it.effect("registers a long thread id's MCP server under a name OpenCode accepts", () =>
     Effect.gen(function* () {
       const child = ThreadId.make(

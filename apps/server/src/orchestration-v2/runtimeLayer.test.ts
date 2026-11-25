@@ -37,6 +37,7 @@ import {
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
+  RunAttemptId,
   RunId,
   ScheduledTaskId,
   ThreadId,
@@ -12493,11 +12494,12 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
           ],
         });
       });
-      const submit = (key: string, json = '{"head":"abc"}') =>
+      const submit = (key: string, callerRunId?: RunId, json = '{"head":"abc"}') =>
         threadManagement.submitRunOutput({
           threadId,
           commandId: CommandId.make(`runtime-layer-owed-output-submit-${key}`),
           json,
+          ...(callerRunId === undefined ? {} : { callerRunId, requestedRunId: callerRunId }),
         });
       const refused = Effect.fn(function* (key: string) {
         const rejected = yield* submit(key).pipe(Effect.flip);
@@ -12508,7 +12510,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
       yield* complete("asked");
       yield* send("woken");
 
-      const accepted = yield* submit("asked");
+      const accepted = yield* submit("asked", asked.id);
       assert.equal(accepted.runId, asked.id);
       const after = yield* orchestrator.getThreadProjection(threadId);
       assert.deepEqual(after.runs.find((run) => run.id === asked.id)?.output?.value, {
@@ -12518,13 +12520,13 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
       // Its reply was lost, and the retry comes once the next step's turn asked for a result.
       yield* complete("woken");
       yield* send("next", { type: "object" });
-      assert.equal((yield* submit("asked")).runId, asked.id);
+      assert.equal((yield* submit("asked", asked.id)).runId, asked.id);
       assert.isUndefined((yield* runOf("next")).output);
 
       // A correction gave the result `next` owed, so a later plain turn owes nothing.
       yield* complete("next");
       yield* send("correction", { type: "object" });
-      yield* submit("correction");
+      yield* submit("correction", (yield* runOf("correction")).id);
       yield* complete("correction");
       yield* send("plain");
       yield* refused("plain");
@@ -12697,11 +12699,481 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
           threadId,
           commandId: CommandId.make("runtime-layer-stopped-output-submit"),
           json: "{}",
+          callerRunId: run.id,
+          requestedRunId: run.id,
         })
         .pipe(Effect.flip);
-      assert.include(String((rejected as { cause?: unknown }).cause), "was stopped");
+      assert.equal(rejected._tag, "ThreadManagementRunOutputRejectedError");
+      assert.include(rejected.message, "was stopped");
+      assert.instanceOf(rejected.cause, Orchestrator.OrchestratorDispatchError);
+      assert.instanceOf(rejected.cause.cause, Orchestrator.RunOutputDispatchRejectionError);
+      assert.equal(rejected.cause.cause.reason, "stopped");
       const after = yield* orchestrator.getThreadProjection(threadId);
       assert.isUndefined(after.runs[0]?.output);
+    }),
+  );
+
+  const setupOutputThread = (slug: string) =>
+    Effect.gen(function* () {
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+      const projectId = ProjectId.make(`runtime-layer-${slug}-project`);
+      const threadId = ThreadId.make(`runtime-layer-${slug}-thread`);
+      yield* projects.create({
+        commandId: CommandId.make(`runtime-layer-${slug}-project-create`),
+        projectId,
+        title: `Project ${slug}`,
+        workspaceRoot: `/tmp/runtime-layer-${slug}`,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`runtime-layer-${slug}-create`),
+        threadId,
+        projectId,
+        title: `Thread ${slug}`,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const send = (
+        key: string,
+        outputSchema?: { readonly type: "object" },
+        options?: { readonly freshContext?: boolean; readonly scheduledTaskId?: ScheduledTaskId },
+      ) =>
+        orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`runtime-layer-${slug}-${key}`),
+          threadId,
+          messageId: MessageId.make(`runtime-layer-${slug}-${key}`),
+          text: key,
+          attachments: [],
+          modelSelection,
+          ...(outputSchema === undefined ? {} : { outputSchema }),
+          ...(options?.freshContext === undefined ? {} : { freshContext: options.freshContext }),
+          ...(options?.scheduledTaskId === undefined
+            ? {}
+            : { scheduledTaskId: options.scheduledTaskId }),
+          dispatchMode: { type: "start_immediately" },
+        });
+      const latestRun = () =>
+        orchestrator
+          .getThreadProjection(threadId)
+          .pipe(Effect.map((projection) => projection.runs.at(-1)!));
+      const updateRun = (
+        run: Effect.Success<ReturnType<typeof latestRun>>,
+        suffix: string,
+        patch: Partial<Effect.Success<ReturnType<typeof latestRun>>>,
+      ) =>
+        eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${threadId}-${suffix}`),
+              type: "run.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: run.requestedAt,
+              payload: { ...run, ...patch },
+            },
+          ],
+        });
+      const finishRun = (
+        run: Effect.Success<ReturnType<typeof latestRun>>,
+        suffix: string,
+        status: "completed" | "interrupted",
+        extra?: Partial<Effect.Success<ReturnType<typeof latestRun>>>,
+      ) => updateRun(run, suffix, { status, completedAt: run.requestedAt, ...extra });
+      // The stop is asked for while the provider has not settled it, so the run is still active.
+      const requestStop = (run: Effect.Success<ReturnType<typeof latestRun>>, suffix: string) =>
+        eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${threadId}-${suffix}`),
+              type: "turn-item.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: run.requestedAt,
+              payload: {
+                id: TurnItemId.make(`${threadId}-${suffix}`),
+                type: "run_interrupt_request",
+                threadId,
+                runId: run.id,
+                nodeId: run.rootNodeId,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 90,
+                status: "completed",
+                title: "Interrupt requested",
+                startedAt: run.requestedAt,
+                completedAt: run.requestedAt,
+                updatedAt: run.requestedAt,
+                message: "Stopped by user",
+              },
+            },
+          ],
+        });
+      const submit = (
+        command: string,
+        json: string,
+        caller?: {
+          readonly callerRunId?: RunId;
+          readonly callerAttemptId?: RunAttemptId;
+          readonly requestedRunId?: RunId;
+        },
+      ) =>
+        threadManagement.submitRunOutput({
+          threadId,
+          commandId: CommandId.make(`runtime-layer-${command}`),
+          json,
+          // Unless a case says otherwise, the call names the run its caller is.
+          ...(caller?.callerRunId === undefined ? {} : { requestedRunId: caller.callerRunId }),
+          ...caller,
+        });
+      return {
+        orchestrator,
+        threadManagement,
+        threadId,
+        send,
+        latestRun,
+        updateRun,
+        finishRun,
+        requestStop,
+        submit,
+      };
+    });
+
+  it.effect.each([
+    {
+      scenario: "stopped-run-or-stale-attempt" as const,
+      description:
+        "turns down a late submission from a stopped run or stale attempt once the next run is active",
+    },
+    {
+      scenario: "owed-run-and-wake" as const,
+      description:
+        "accepts an owed run's own caller or its wake's caller while rejecting an earlier stopped run",
+    },
+    {
+      scenario: "completed-before-dispatch" as const,
+      description:
+        "accepts a bound caller's own output when the run completes just before orchestrator dispatch",
+    },
+  ])("$description", ({ scenario }) =>
+    Effect.gen(function* () {
+      if (scenario === "stopped-run-or-stale-attempt") {
+        const {
+          orchestrator,
+          threadManagement,
+          threadId,
+          send,
+          latestRun,
+          updateRun,
+          finishRun,
+          submit,
+        } = yield* setupOutputThread("late-stopped-run");
+
+        // Run A starts with a schema, then is stopped while its submission is in flight.
+        yield* send("run-a", { type: "object" });
+        const runA = yield* latestRun();
+        yield* finishRun(runA, "run-a-interrupted", "interrupted");
+
+        // Run B starts with a compatible schema and attempt 2 active.
+        yield* send("run-b", { type: "object" });
+        const runB = yield* latestRun();
+        const attempt1 = RunAttemptId.make(`${runB.id}:attempt:1`);
+        const attempt2 = RunAttemptId.make(`${runB.id}:attempt:2`);
+        yield* updateRun(runB, "run-b-attempt-2", { activeAttemptId: attempt2 });
+
+        // A caller that names no run cannot be told from a stopped run's late call.
+        const anonymous = yield* submit("anonymous-run-output", '{"from":"anonymous"}').pipe(
+          Effect.flip,
+        );
+        assert.equal(anonymous._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(anonymous.message, "runId");
+
+        const lateFromA = yield* submit("late-run-output-from-a", '{"from":"run-a"}', {
+          callerRunId: runA.id,
+        }).pipe(Effect.flip);
+        assert.equal(lateFromA._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromA.message, "no longer active");
+
+        const lateFromAttempt1 = yield* submit(
+          "late-run-output-from-attempt-1",
+          '{"from":"attempt-1"}',
+          { callerRunId: runB.id, callerAttemptId: attempt1 },
+        ).pipe(Effect.flip);
+        assert.equal(lateFromAttempt1._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromAttempt1.message, "no longer active");
+
+        // A's late call that names A still fails when it arrives on B's rotated credential.
+        const lateFromAOnB = yield* submit("late-run-output-from-a-on-b", '{"from":"run-a"}', {
+          callerRunId: runB.id,
+          callerAttemptId: attempt2,
+          requestedRunId: runA.id,
+        }).pipe(Effect.flip);
+        assert.equal(lateFromAOnB._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromAOnB.message, "no longer active");
+
+        // A runtime that updates its credential live sends A's late call on B's credential, so a
+        // call that names no run is not taken for B.
+        const unnamedOnB = yield* threadManagement
+          .submitRunOutput({
+            threadId,
+            commandId: CommandId.make("runtime-layer-late-unnamed-run-output-on-b"),
+            json: '{"from":"run-a"}',
+            callerRunId: runB.id,
+            callerAttemptId: attempt2,
+          })
+          .pipe(Effect.flip);
+        assert.equal(unnamedOnB._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(unnamedOnB.message, "runId");
+
+        assert.isUndefined((yield* latestRun()).output);
+
+        const acceptedB = yield* submit("late-run-output-from-b", '{"from":"run-b"}', {
+          callerRunId: runB.id,
+          callerAttemptId: attempt2,
+        });
+        assert.equal(acceptedB.runId, runB.id);
+        const afterB = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.id === runB.id,
+        )!;
+        assert.deepEqual(afterB.output?.value, { from: "run-b" });
+
+        // A continuation of stopped run A rejects A's delayed unbound submission and accepts C's own runId.
+        yield* finishRun(afterB, "run-b-completed", "completed");
+        yield* send("run-c", { type: "object" });
+        const runC = yield* latestRun();
+        yield* updateRun(runC, "run-c-continues-a", { manualContinuationOfRunId: runA.id });
+        const lateFromStoppedAncestor = yield* submit(
+          "run-output-from-stopped-ancestor",
+          '{"from":"late-ancestor"}',
+          { callerRunId: runA.id },
+        ).pipe(Effect.flip);
+        assert.equal(lateFromStoppedAncestor._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromStoppedAncestor.message, "no longer active");
+        assert.isUndefined((yield* latestRun()).output);
+        const acceptedViaContinuation = yield* submit(
+          "run-output-via-continuation",
+          '{"from":"continued"}',
+          { callerRunId: runC.id },
+        );
+        assert.equal(acceptedViaContinuation.runId, runC.id);
+        const afterC = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.id === runC.id,
+        )!;
+        assert.deepEqual(afterC.output?.value, { from: "continued" });
+        // A's late call naming A on C's live-updated credential does not overwrite C's result; C is
+        // prompted with its own runId.
+        const lateFromAOnC = yield* submit("run-output-late-a-on-c", '{"from":"late-a"}', {
+          callerRunId: runC.id,
+          requestedRunId: runA.id,
+        }).pipe(Effect.flip);
+        assert.equal(lateFromAOnC._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromAOnC.message, "no longer active");
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.find((run) => run.id === runC.id)
+            ?.output?.value,
+          { from: "continued" },
+        );
+
+        // A plain turn with no schema preserves the plain-turn guidance even for stale/unbound MCP callers.
+        yield* finishRun(afterC, "run-c-completed", "completed");
+        yield* send("run-plain");
+        const plainFromStale = yield* submit("plain-run-output-stale", "{}", {
+          callerRunId: runA.id,
+        }).pipe(Effect.flip);
+        assert.equal(plainFromStale._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(plainFromStale.message, "not asked for a result");
+        const plainFromUnbound = yield* submit("plain-run-output-unbound", "{}").pipe(Effect.flip);
+        assert.equal(plainFromUnbound._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(plainFromUnbound.message, "not asked for a result");
+        return;
+      }
+
+      if (scenario === "owed-run-and-wake") {
+        const { orchestrator, threadId, send, latestRun, finishRun, requestStop, submit } =
+          yield* setupOutputThread("owed-wake-output");
+
+        yield* send("run-a", { type: "object" });
+        const runA = yield* latestRun();
+        yield* finishRun(runA, "run-a-interrupted", "interrupted");
+
+        yield* send("run-c", { type: "object" });
+        const runC = yield* latestRun();
+        yield* finishRun(runC, "run-c-completed", "completed");
+        yield* send("run-d-wake");
+        const runD = yield* latestRun();
+        const staleAOnWake = yield* submit(
+          "late-run-output-from-a-during-wake",
+          '{"from":"stale-run-a"}',
+          { callerRunId: runA.id },
+        ).pipe(Effect.flip);
+        assert.equal(staleAOnWake._tag, "ThreadManagementRunOutputRejectedError");
+
+        const acceptedFromC = yield* submit("late-run-output-from-c", '{"from":"run-c"}', {
+          callerRunId: runC.id,
+        });
+        assert.equal(acceptedFromC.runId, runC.id);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.find((run) => run.id === runC.id)
+            ?.output?.value,
+          { from: "run-c" },
+        );
+
+        yield* finishRun(runD, "run-d-completed", "completed");
+        yield* send("run-e", { type: "object" });
+        const runE = yield* latestRun();
+        yield* finishRun(runE, "run-e-completed", "completed");
+        yield* send("run-f-wake");
+        const runF = yield* latestRun();
+        const acceptedFromF = yield* submit("late-run-output-from-f", '{"from":"run-f"}', {
+          callerRunId: runF.id,
+          requestedRunId: runE.id,
+        });
+        assert.equal(acceptedFromF.runId, runE.id);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.find((run) => run.id === runE.id)
+            ?.output?.value,
+          { from: "run-f" },
+        );
+
+        // A stopped wake's result is not kept, on its own credential or on an unbound one that
+        // can only name the owed run.
+        yield* finishRun(runF, "run-f-completed", "completed");
+        yield* send("run-g", { type: "object" });
+        const runG = yield* latestRun();
+        yield* finishRun(runG, "run-g-completed", "completed");
+        yield* send("run-h-wake");
+        const runH = yield* latestRun();
+        yield* requestStop(runH, "run-h-interrupt-request");
+        for (const callerRunId of [runH.id, runG.id]) {
+          const fromStoppedWake = yield* submit(
+            `run-output-from-stopped-wake-${callerRunId}`,
+            '{"from":"h"}',
+            { callerRunId, requestedRunId: runG.id },
+          ).pipe(Effect.flip);
+          assert.equal(fromStoppedWake._tag, "ThreadManagementRunOutputRejectedError");
+          assert.include(fromStoppedWake.message, "was stopped");
+        }
+
+        // Once the stopped wake ends, its credential answers for nothing while the next wake's does.
+        yield* finishRun(runH, "run-h-interrupted", "interrupted");
+        yield* send("run-i-wake");
+        const runI = yield* latestRun();
+        const lateFromStoppedWake = yield* submit(
+          "late-run-output-from-stopped-wake",
+          '{"from":"h"}',
+          { callerRunId: runH.id, requestedRunId: runG.id },
+        ).pipe(Effect.flip);
+        assert.equal(lateFromStoppedWake._tag, "ThreadManagementRunOutputRejectedError");
+        assert.include(lateFromStoppedWake.message, "no longer active");
+        assert.isUndefined(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.find((run) => run.id === runG.id)
+            ?.output,
+        );
+        const fromNextWake = yield* submit("run-output-from-next-wake", '{"from":"i"}', {
+          callerRunId: runI.id,
+          requestedRunId: runG.id,
+        });
+        assert.equal(fromNextWake.runId, runG.id);
+        return;
+      }
+
+      const { orchestrator, threadId, send, latestRun, finishRun } = yield* setupOutputThread(
+        "completed-before-dispatch",
+      );
+      const dispatchOutput = (
+        command: string,
+        targetRunId: RunId,
+        callerAttemptId: RunAttemptId,
+        answer: string,
+      ) =>
+        orchestrator.dispatch({
+          type: "run.output.submit",
+          commandId: CommandId.make(`runtime-layer-${command}`),
+          threadId,
+          runId: targetRunId,
+          callerRunId: targetRunId,
+          callerAttemptId,
+          value: { answer },
+        });
+      const completeWithAttempt = (name: string) =>
+        Effect.gen(function* () {
+          yield* send(name, { type: "object" });
+          const run = yield* latestRun();
+          const attempt = RunAttemptId.make(`${run.id}:attempt:1`);
+          yield* finishRun(run, `${name}-completed`, "completed", { activeAttemptId: attempt });
+          return { run, attempt };
+        });
+
+      const own = yield* completeWithAttempt("run-own");
+      // Simulate the race where the run completes after service validation, with no active run.
+      yield* dispatchOutput(
+        "completed-before-dispatch-submit",
+        own.run.id,
+        own.attempt,
+        "landed-on-completion-race",
+      );
+      assert.deepEqual((yield* orchestrator.getThreadProjection(threadId)).runs[0]?.output?.value, {
+        answer: "landed-on-completion-race",
+      });
+
+      // A scheduled fresh-context run is a side conversation and still allows the owed submission.
+      const beforeSched = yield* completeWithAttempt("run-before-sched");
+      yield* send("run-sched-fresh", undefined, {
+        freshContext: true,
+        scheduledTaskId: ScheduledTaskId.make("runtime-layer-sched-fresh-task"),
+      });
+      yield* dispatchOutput(
+        "sched-fresh-owed-dispatch-submit",
+        beforeSched.run.id,
+        beforeSched.attempt,
+        "landed-across-scheduled-fresh",
+      );
+      yield* finishRun(yield* latestRun(), "run-sched-fresh-completed", "completed");
+      assert.deepEqual(
+        (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (candidate) => candidate.id === beforeSched.run.id,
+        )?.output?.value,
+        { answer: "landed-across-scheduled-fresh" },
+      );
+
+      // An unscheduled fresh-context run moves the context boundary past the owed run under the lock.
+      const beforeFresh = yield* completeWithAttempt("run-before-fresh");
+      yield* send("run-unscheduled-fresh", undefined, { freshContext: true });
+      const acrossFresh = yield* dispatchOutput(
+        "fresh-owed-dispatch-submit",
+        beforeFresh.run.id,
+        beforeFresh.attempt,
+        "stale-after-fresh-context",
+      ).pipe(Effect.flip);
+      assert.instanceOf(acrossFresh, Orchestrator.OrchestratorDispatchError);
+      assert.instanceOf(acrossFresh.cause, Orchestrator.RunOutputDispatchRejectionError);
+      assert.equal(acrossFresh.cause.reason, "inactive");
+      yield* finishRun(yield* latestRun(), "run-unscheduled-fresh-completed", "completed");
+
+      // Once a newer started turn asks for a result, an earlier unanswered turn no longer owes one.
+      const first = yield* completeWithAttempt("run-first");
+      yield* send("run-superseded", { type: "object" });
+      const superseded = yield* dispatchOutput(
+        "superseded-owed-dispatch-submit",
+        first.run.id,
+        first.attempt,
+        "stale-after-superseded",
+      ).pipe(Effect.flip);
+      assert.instanceOf(superseded, Orchestrator.OrchestratorDispatchError);
+      assert.instanceOf(superseded.cause, Orchestrator.RunOutputDispatchRejectionError);
+      assert.equal(superseded.cause.reason, "inactive");
     }),
   );
 });

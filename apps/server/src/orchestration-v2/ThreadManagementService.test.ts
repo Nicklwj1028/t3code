@@ -556,6 +556,8 @@ it.effect(
         threadId,
         commandId: CommandId.make("command:thread-management:owed"),
         json: '{"head":"abc"}',
+        callerRunId: wakeRunId,
+        requestedRunId: runId,
       });
       expect(accepted.runId).toBe(runId);
       expect(submitted).toMatchObject([
