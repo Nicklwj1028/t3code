@@ -645,9 +645,8 @@ already on, turn it off and on again. Either needs a client paired with
 `relay:read`, `relay:write`, and `relay:configure`. The desktop app's own session
 and the startup pairing link include all three; a pairing link created in
 **Settings → Sharing & access** needs `relay:configure` selected. You can also
-run `t3 connect link` on the host and then restart T3 Code there. A
-command-line host that released its tunnel when it last stopped may link itself
-again on its next start; run `t3 connect unlink` on that host to keep it off.
+run `t3 connect link` on the host and then restart T3 Code there. To unlink a
+command-line host from T3 Connect, run `t3 connect unlink` on that host.
 Removing an environment from a device's connection settings only forgets it on
 that device and doesn't change your T3 Connect account. A device keeps a saved
 environment after it's deregistered until you remove it from that device.
