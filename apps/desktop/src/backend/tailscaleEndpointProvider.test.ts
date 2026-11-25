@@ -58,6 +58,34 @@ describe("tailscale endpoint provider", () => {
     }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 
+  it.effect("offers a VPN address when a stopped Tailscale still reports its last netmap", () =>
+    Effect.gen(function* () {
+      const endpoints = yield* resolveTailscaleAdvertisedEndpoints({
+        port: 3773,
+        networkInterfaces: {
+          utun100: [{ address: "100.81.22.33", family: "IPv4", internal: false }],
+        },
+        statusJson: `{"BackendState":"Stopped","Self":{"TailscaleIPs":["100.64.1.2"]}}`,
+      });
+      assert.deepEqual(
+        endpoints.map((endpoint) => endpoint.httpBaseUrl),
+        ["http://100.81.22.33:3773/"],
+      );
+
+      const reused = yield* resolveTailscaleAdvertisedEndpoints({
+        port: 3773,
+        networkInterfaces: {
+          utun100: [{ address: "100.81.22.33", family: "IPv4", internal: false }],
+        },
+        statusJson: `{"BackendState":"Stopped","Self":{"TailscaleIPs":["100.81.22.33"]}}`,
+      });
+      assert.deepEqual(
+        reused.map((endpoint) => endpoint.provider.id),
+        ["vpn"],
+      );
+    }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
+  );
+
   it.effect(
     "recognizes a macOS Tailscale tunnel by its IPv6 address when status is unavailable",
     () =>
