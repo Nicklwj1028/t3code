@@ -1,6 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -554,6 +556,107 @@ describe("Antigravity subscription limits", () => {
       expect(byId.get("gemini-argon-wtu-weekly")?.label).toBe("Gemini 4 Argon · Weekly");
       expect(byId.get("gemini-carbon-wtu-weekly")?.label).toBe("Gemini 4 Carbon · Weekly");
       expect(byId.get("gemini-carbon-5h")?.label).toBe("Gemini Carbon · 5-hour");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  // Gemini Enterprise reports one unwindowed bucket per model and effort under "All Models".
+  it.effect("folds unwindowed Enterprise buckets by model family", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({
+        authMethod: "oauth-business",
+        summary: {
+          groups: [
+            {
+              displayName: "All Models",
+              buckets: [
+                {
+                  bucketId: "gemini-3.1-pro-low",
+                  displayName: "Gemini 3.1 Pro (Low)",
+                  remainingFraction: 0.8,
+                  resetTime: "2026-10-21T20:00:00Z",
+                },
+                {
+                  bucketId: "gemini-3.1-pro-high",
+                  remainingFraction: 0,
+                  resetTime: "2026-10-21T18:00:00Z",
+                },
+                {
+                  bucketId: "gemini-3.6-flash-high",
+                  remainingFraction: 0,
+                  resetTime: "2026-10-21T14:00:00Z",
+                },
+                { bucketId: "gemini-3.1-pro-disabled", remainingFraction: 0, disabled: true },
+                { bucketId: "gemini-4-argon-high", remainingFraction: 0.9 },
+                { bucketId: "gemini-4-carbon-high", remainingFraction: 1 },
+                {
+                  bucketId: "claude-opus-5-5-high",
+                  remainingFraction: 0.5,
+                  resetTime: "2026-10-21T17:00:00Z",
+                },
+                { bucketId: "claude-opus-5-5-low", remainingFraction: 0.5 },
+                { bucketId: "gpt-oss-120b-medium", remainingFraction: 1 },
+                { bucketId: "3p-custom", displayName: "Custom", remainingFraction: 0.75 },
+              ],
+            },
+          ],
+        },
+      });
+      const usageLimits = yield* probe;
+      expect(usageLimits.windows).toEqual([
+        {
+          id: "3p-custom",
+          label: "Claude & GPT (shared) · Custom",
+          kind: "other",
+          usedPercent: 25,
+        },
+        {
+          id: "claude-quota",
+          label: "Claude · Reported quota",
+          kind: "other",
+          usedPercent: 50,
+        },
+        {
+          id: "gemini-argon-quota",
+          label: "Gemini Argon · Reported quota",
+          kind: "other",
+          usedPercent: expect.closeTo(10),
+        },
+        {
+          id: "gemini-carbon-quota",
+          label: "Gemini Carbon · Reported quota",
+          kind: "other",
+          usedPercent: 0,
+        },
+        {
+          id: "gemini-quota",
+          label: "Gemini · Reported quota",
+          kind: "other",
+          usedPercent: 100,
+          resetsAt: "2026-10-21T18:00:00.000Z",
+        },
+        { id: "gpt-quota", label: "GPT · Reported quota", kind: "other", usedPercent: 0 },
+      ]);
+      // gemini-3.1-pro-high is still exhausted after flash's earlier reset.
+      expect(
+        exhaustedUsageWindow(
+          {
+            instanceId: ProviderInstanceId.make("antigravity"),
+            driver: ProviderDriverKind.make("antigravity"),
+            enabled: true,
+            installed: true,
+            version: null,
+            status: "ready",
+            auth: { status: "authenticated" },
+            checkedAt: usageLimits.checkedAt,
+            models: [],
+            slashCommands: [],
+            skills: [],
+            usageLimits,
+          },
+          Date.parse("2026-10-21T15:00:00Z"),
+          "gemini-3.1-pro-high",
+        )?.id,
+      ).toBe("gemini-quota");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
