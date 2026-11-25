@@ -166,6 +166,7 @@ import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logi
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorLabel,
+  PullRequestAvatarSourceContext,
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
   pullRequestChecksState,
@@ -1601,7 +1602,7 @@ export function PullRequestDetailPanel({
     );
   }
 
-  return (
+  const panel = (
     // One tooltip for the panel's many triggers; mounting one per trigger dominated opening it.
     <SharedTooltipProvider>
       <div className="relative flex h-full min-h-0 w-full flex-col bg-background">
@@ -2337,5 +2338,14 @@ export function PullRequestDetailPanel({
         ) : null}
       </div>
     </SharedTooltipProvider>
+  );
+  return (
+    <PullRequestAvatarSourceContext
+      value={
+        detail ? { environmentId, cwd: detail.workspaceRoot, repository: detail.repository } : null
+      }
+    >
+      {panel}
+    </PullRequestAvatarSourceContext>
   );
 }
