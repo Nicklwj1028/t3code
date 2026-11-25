@@ -538,8 +538,14 @@ export interface AcpAdapterV2Flavor {
    */
   readonly ownedModelOptionIds?: ReadonlyArray<string>;
   readonly lockSessionModeToPolicy?: true;
+  /**
+   * Mode to set on each configure, or none. `unpickedMode` is the session's mode state, given only
+   * while applying the permission mode (a session's first configure, or a changed runtime mode)
+   * to a thread that picks no mode.
+   */
   readonly sessionModeForPolicy?: (
     policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+    unpickedMode: AcpSessionModeState | undefined,
   ) => string | undefined;
   /**
    * Native select-option values to apply for a runtime policy (e.g. Kiro's
@@ -2414,6 +2420,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           rootForegroundWork = undefined;
           agentRequests.clear();
           nativeChildren.clear();
+          yield* Ref.set(configuredRuntimeMode, null);
           yield* Ref.set(activeSessionSetup, setup);
           yield* resetPublishedCatalogKey;
         });
@@ -8559,7 +8566,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             if (!advertisedValues.includes(selection.value)) continue;
             yield* runtime.setConfigOption(selection.id, selection.value);
           }
-          const policyMode = flavor.sessionModeForPolicy?.(runtimePolicy);
+          const policyMode = flavor.sessionModeForPolicy?.(
+            runtimePolicy,
+            (yield* Ref.get(configuredRuntimeMode)) !== runtimePolicy.runtimeMode &&
+              !optionSelections.some((selection) => isModeChoice(selection.id))
+              ? yield* runtime.getModeState
+              : undefined,
+          );
           const modeLocked = flavor.lockSessionModeToPolicy && policyMode !== undefined;
           if (policyMode !== undefined) {
             yield* runtime.setMode(policyMode);
