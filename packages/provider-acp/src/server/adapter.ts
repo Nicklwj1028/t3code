@@ -1747,6 +1747,7 @@ interface ActiveAcpTurn {
   readonly attemptedInputRecoveryKeys: Set<string>;
   /** Tools the agent failed after Stop; later updates keep them interrupted. */
   readonly stoppedToolCallIds: Set<string>;
+  readonly clientTerminalIds: Set<string>;
   readonly toolUpdatesSkipped: Map<string, number>;
   readonly toolStartedAt: Map<string, DateTime.Utc>;
   readonly subagents: Map<string, ActiveAcpSubagent>;
@@ -6918,6 +6919,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           ),
         );
 
+        const killTurnClientTerminals = (context: ActiveAcpTurn | null) =>
+          clientTerminals === undefined || context === null
+            ? Effect.void
+            : clientTerminals.killAndAwait(context.clientTerminalIds);
+
         const cancelPendingRuntimeRequests = Effect.fnUntraced(function* (
           options: { readonly stopMcpCalls: boolean } = { stopMcpCalls: true },
         ) {
@@ -7448,7 +7454,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ) {
           if (clientTerminals === undefined) return;
           yield* targetRuntime.handleCreateTerminal((request) =>
-            guardClientTerminalCreate.pipe(Effect.andThen(clientTerminals.create(request))),
+            guardClientTerminalCreate.pipe(
+              Effect.andThen(clientTerminals.create(request)),
+              Effect.tap(({ terminalId }) =>
+                Effect.map(Ref.get(activeTurn), (context) => {
+                  context?.clientTerminalIds.add(terminalId);
+                }),
+              ),
+            ),
           );
           yield* targetRuntime.handleTerminalOutput(clientTerminals.output);
           yield* targetRuntime.handleTerminalWaitForExit(clientTerminals.waitForExit);
@@ -9920,6 +9933,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               blockedInputRecoveryKeys: new Set(),
               attemptedInputRecoveryKeys: new Set(),
               stoppedToolCallIds: new Set(),
+              clientTerminalIds: new Set(),
               toolUpdatesSkipped: new Map(),
               toolStartedAt: new Map(),
               subagents: new Map(),
@@ -10777,7 +10791,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                             timeoutMs: ACP_STOP_CONFIRM_TIMEOUT_MS,
                           });
                         }
-                        yield* runtimeCallbackPermit.withPermit(
+                        const stoppedContext = yield* runtimeCallbackPermit.withPermit(
                           Effect.gen(function* () {
                             // Callbacks can settle the turn while close is awaiting confirmation.
                             const context = yield* Ref.get(activeTurn);
@@ -10794,8 +10808,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                             if (context !== null) {
                               yield* finalizeTurn(context, "interrupted");
                             }
+                            return context;
                           }),
                         );
+                        yield* killTurnClientTerminals(stoppedContext);
                         return undefined;
                       }
                       const softSteerCandidate =
@@ -10970,6 +10986,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       }
                       // A settled soft interrupt keeps background subagents, and with them their MCP calls.
                       yield* cancelPendingRuntimeRequests({ stopMcpCalls: !settledSoftInterrupt });
+                      if (!settledSoftInterrupt) yield* killTurnClientTerminals(context);
                       // Finalize before killing so projection catches up and concurrent interrupts see activeTurn cleared.
                       if (
                         (hardRestart || context.promptSettled || settledSoftInterrupt) &&
