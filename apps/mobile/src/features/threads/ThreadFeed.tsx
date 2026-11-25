@@ -356,7 +356,7 @@ const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
 } as const;
 
-const TURN_FOLD_HEIGHT = 42;
+const TURN_FOLD_HEIGHT = Platform.OS === "android" ? 48 : 44;
 const FEED_PADDING_TOP = 12;
 const VIEWED_IMAGE_GAP = 8;
 const USER_BUBBLE_HORIZONTAL_PADDING = 3.5 * 3.5;
@@ -438,7 +438,7 @@ function UserMessageCopyButton(props: {
       text={props.text}
       onCopy={props.onCopy}
       tintColor={props.tintColor}
-      buttonSize={28}
+      buttonSize={Platform.OS === "android" ? 48 : 44}
       iconSize={13}
     />
   );
@@ -532,12 +532,8 @@ function AssistantForkButton(props: {
           })
           .finally(() => setBusy(false));
       }}
-      className="h-7 w-7 items-center justify-center disabled:opacity-40"
-      style={
-        Platform.OS === "android"
-          ? { width: props.buttonSize, height: props.buttonSize }
-          : undefined
-      }
+      className="items-center justify-center disabled:opacity-40"
+      style={{ width: props.buttonSize, height: props.buttonSize }}
     >
       {busy ? (
         <AppActivityIndicator size="small" />
@@ -1924,8 +1920,8 @@ function RunFoldButton({
         accessibilityState={{ expanded: entry.expanded, busy: loading }}
         onPress={toggle}
         hitSlop={4}
-        className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2"
-        style={{ minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, rowSizing.estimatedRowHeight) }}
+        className="min-h-[44px] min-w-0 flex-1 flex-row items-center gap-2 android:min-h-[48px]"
+        style={{ minHeight: Math.max(TURN_FOLD_HEIGHT, rowSizing.estimatedRowHeight) }}
       >
         <Text
           key={rowSizing.textSizeKey}
@@ -2574,7 +2570,7 @@ function renderFeedEntry(
             </View>
           ) : null}
           {bubbleBodyVisible ? (
-            <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
+            <View className="-mt-1 flex-row items-center justify-end gap-1 pr-0.5">
               {foldRowId !== null && senderRef ? (
                 <OpenSenderThreadButton
                   environmentId={senderRef.environmentId}
@@ -3221,7 +3217,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     () =>
       Platform.OS === "android"
         ? { button: androidButtonSize, icon: androidIconSize }
-        : { button: 28, icon: 13 },
+        : { button: 44, icon: 13 },
     [androidButtonSize, androidIconSize],
   );
   const screenColor = theme["--color-screen"];
@@ -4130,9 +4126,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       case "run-fold":
         return resolveThreadFeedFixedItemSize(entry.type);
       case "work-toggle":
-        return entry.thought ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
+        return entry.thought
+          ? undefined
+          : WORK_GROUP_TOGGLE_HEIGHT + (entry.continuesWorkLog ? 0 : 3.5);
       case "thinking":
-        return WORK_GROUP_TOGGLE_HEIGHT;
+        return workRowSizing.fixedRowHeight;
       case "activity-group":
         if (entry.activities[0]?.projectedItem.item.type === "subagent") {
           return undefined;
