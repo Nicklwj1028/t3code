@@ -1195,7 +1195,8 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelPresent = rightPanelPresence.present;
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
+  // One mount point for open and closed, so the toggles are not remounted.
+  const rightPanelControlsAtRoot = !rightPanelControlsInPanel;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -3545,7 +3546,6 @@ export default function ChatView(props: ChatViewProps) {
           state={deviceState}
         />
       )}
-      {rightPanelControlsAtRoot && !embedded ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -3573,13 +3573,6 @@ export default function ChatView(props: ChatViewProps) {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            {isElectron && rightPanelControlsAtRoot ? (
-              <span
-                aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-              />
-            ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
             {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             <ChatHeader
               activeThreadEnvironmentId={activeThread.environmentId}
@@ -4283,6 +4276,9 @@ export default function ChatView(props: ChatViewProps) {
           {rightPanelContent}
         </ChatRightPanel>
       ) : null}
+
+      {/* Electron caption hit-testing gives later no-drag regions precedence. */}
+      {rightPanelControlsAtRoot && !embedded ? panelLayoutControls : null}
 
       <RevertConfirmHost
         threadKey={routeThreadKey}
