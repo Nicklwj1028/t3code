@@ -1304,7 +1304,7 @@ it.layer(
       );
     });
 
-    it("does not bring back models the installed CLI is too old to run", () => {
+    it("only drops missing Claude models after a direct gateway listing", () => {
       const pendingProvider = {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         driver: ProviderDriverKind.make("claudeAgent"),
@@ -1317,6 +1317,7 @@ it.layer(
         models: [
           { slug: "claude-old", name: "Old", isCustom: false, capabilities: null },
           { slug: "claude-next", name: "Next", isCustom: false, capabilities: null },
+          { slug: "claude-removed", name: "Removed", isCustom: false, capabilities: null },
         ],
         slashCommands: [],
         skills: [],
@@ -1333,6 +1334,21 @@ it.layer(
 
       assert.deepStrictEqual(
         ProviderRegistry.mergeProviderSnapshot(pendingProvider, probedProvider).models,
+        [pendingProvider.models[0], pendingProvider.models[2]],
+      );
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(pendingProvider, {
+          ...probedProvider,
+          modelsAuthoritative: true,
+        }).models,
+        [...probedProvider.models],
+      );
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(pendingProvider, {
+          ...probedProvider,
+          status: "warning",
+          modelsAuthoritative: true,
+        }).models,
         [...probedProvider.models],
       );
     });
