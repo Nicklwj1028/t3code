@@ -73,6 +73,7 @@ import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
+import { orchestrationV2ProjectedTurnItemKey } from "@t3tools/shared/orchestrationV2Timeline";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { collectToolFilePaths } from "@t3tools/shared/toolActivity";
@@ -597,7 +598,7 @@ type MessagesTimelineRowContent =
     }
   | {
       kind: "turn-fold";
-      deferredWorkItemIds?: ReadonlyArray<string>;
+      deferredWorkAnchorKeys?: ReadonlyArray<string>;
       id: string;
       createdAt: string;
       runId: RunId;
@@ -606,7 +607,7 @@ type MessagesTimelineRowContent =
     }
   | {
       kind: "attempt-fold";
-      deferredWorkItemIds?: ReadonlyArray<string>;
+      deferredWorkAnchorKeys?: ReadonlyArray<string>;
       id: string;
       createdAt: string;
       runId: RunId;
@@ -780,7 +781,7 @@ interface TurnFold {
 }
 
 interface SupersededAttemptFold {
-  readonly deferredWorkItemIds: ReadonlyArray<string>;
+  readonly deferredWorkAnchorKeys: ReadonlyArray<string>;
   readonly runId: RunId;
   readonly attemptId: RunAttemptId;
   readonly anchorEntryId: string;
@@ -883,9 +884,9 @@ function deriveSupersededAttemptFolds(
     const attempt = firstEntry?.attempt;
     if (firstEntry === undefined || attempt === undefined) continue;
     foldsByAnchorEntryId.set(firstEntry.id, {
-      deferredWorkItemIds: entries.flatMap((entry) =>
+      deferredWorkAnchorKeys: entries.flatMap((entry) =>
         entry.kind === "work" && entry.entry.projectedItem?.item.deferredWork
-          ? [String(entry.entry.projectedItem.sourceItemId)]
+          ? [orchestrationV2ProjectedTurnItemKey(entry.entry.projectedItem)]
           : [],
       ),
       runId: attempt.runId,
@@ -1681,8 +1682,8 @@ export function deriveMessagesTimelineRows(
     liveSubagentEntryIds,
     retainedAssistantReplyIds,
   );
-  const supersededWorkItemIds = new Set(
-    [...supersededFoldsByAnchorEntryId.values()].flatMap((fold) => fold.deferredWorkItemIds),
+  const supersededWorkAnchorKeys = new Set(
+    [...supersededFoldsByAnchorEntryId.values()].flatMap((fold) => fold.deferredWorkAnchorKeys),
   );
   const activeVisualResponseRunIds = deriveActiveVisualResponseRunIds({
     timelineEntries: timelineEntries,
@@ -1964,18 +1965,20 @@ export function deriveMessagesTimelineRows(
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
     if (turnFold) {
-      const deferredWorkItemIds = [...turnFold.entryIds].flatMap((entryId) => {
+      const deferredWorkAnchorKeys = [...turnFold.entryIds].flatMap((entryId) => {
         const entry = timelineEntryById.get(entryId);
         return entry?.kind === "work" &&
           entry.entry.projectedItem?.item.deferredWork &&
-          !supersededWorkItemIds.has(String(entry.entry.projectedItem.sourceItemId))
-          ? [String(entry.entry.projectedItem.sourceItemId)]
+          !supersededWorkAnchorKeys.has(
+            orchestrationV2ProjectedTurnItemKey(entry.entry.projectedItem),
+          )
+          ? [orchestrationV2ProjectedTurnItemKey(entry.entry.projectedItem)]
           : [];
       });
       nextRows.push({
         kind: "turn-fold",
         id: `turn-fold:${turnFold.runId}`,
-        ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
+        ...(deferredWorkAnchorKeys.length > 0 ? { deferredWorkAnchorKeys } : {}),
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
@@ -1991,7 +1994,7 @@ export function deriveMessagesTimelineRows(
     if (supersededFold) {
       nextRows.push({
         kind: "attempt-fold",
-        deferredWorkItemIds: supersededFold.deferredWorkItemIds,
+        deferredWorkAnchorKeys: supersededFold.deferredWorkAnchorKeys,
         id: `attempt-fold:${supersededFold.attemptId}`,
         createdAt: supersededFold.createdAt,
         runId: supersededFold.runId,
@@ -2809,8 +2812,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "attempt-fold":
     case "turn-fold": {
       const bf = b as typeof a;
-      const anchors = a.deferredWorkItemIds ?? [];
-      const nextAnchors = bf.deferredWorkItemIds ?? [];
+      const anchors = a.deferredWorkAnchorKeys ?? [];
+      const nextAnchors = bf.deferredWorkAnchorKeys ?? [];
       return (
         a.createdAt === bf.createdAt &&
         a.label === bf.label &&
