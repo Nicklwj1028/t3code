@@ -2755,12 +2755,14 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
         new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
       );
       let runtime: AcpSessionRuntime.AcpSessionRuntime["Service"] | undefined;
+      const launchModes: Array<string | undefined> = [];
       const instanceId = ProviderInstanceId.make("antigravity-plan-exit-test");
       const adapter = yield* makeAntigravityAdapterV2({
         instanceId,
         selfInvocation: yield* resolveSelfInvocation(),
-        makeRuntime: (input) =>
-          makeAntigravityAcpRuntime({
+        makeRuntime: (input) => {
+          launchModes.push(input.runtimePolicy?.runtimeMode);
+          return makeAntigravityAcpRuntime({
             ...input,
             childProcessSpawner,
             spawn: {
@@ -2776,7 +2778,8 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
                 runtime = made;
               }),
             ),
-          ),
+          );
+        },
         withProcess: (_stop, task) => task,
         defaultModel: Effect.undefined,
       });
@@ -2823,6 +2826,7 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
         Stream.runHead,
       );
       assert.equal((yield* runtime!.getModeState)?.currentModeId, "default");
+      assert.deepEqual(launchModes, ["full-access", "approval-required"]);
     }).pipe(Effect.provide(layerSession), Effect.scoped),
   );
 });
