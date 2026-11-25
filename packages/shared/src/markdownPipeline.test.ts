@@ -5,7 +5,9 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import type { Link, Root, RootContent } from "mdast";
+import { markdownWithSpacedFilePaths } from "./markdownSpacedFilePaths.ts";
 import {
+  chatMarkdownImageSources,
   CHAT_MARKDOWN_REHYPE_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
@@ -951,4 +953,117 @@ it("links complete absolute paths in prose and skips shortened ones", () => {
   ]);
   expect(links(`[notes](${path}) and \`${path}\``)).toEqual([path]);
   expect(links(`\`\`\`\n${path}\n\`\`\``)).toEqual([]);
+});
+
+it("repairs bare local media embeds and file links with spaces across Windows, POSIX, and relative paths", () => {
+  const winSlash = "Z:/Projects/Demo App/Output Shots/final-bust.jpg";
+  const winBackslash = String.raw`C:\Users\First Last\.t3\design-review\r6-1.png`;
+  const winFileLink = "C:/Users/First Last/Downloads GC/project/src/DetailsTab.tsx:42";
+  const macIcloud = "/Users/test/Mobile Documents/iCloud~md~notes/cover photo.png";
+  const wslParens = "/mnt/c/Project (demo)/screen shot.webp";
+  const homePath = "~/My Documents/notes.md";
+  const relBang = "./img !32.png";
+  const relParens = "screenshots/my shot (1).png";
+  const relDoc = "../my docs/spec.md:12";
+  const wrapped = "/work/Already wrapped.png";
+  const authored = [
+    `**Compare** ![Bust](${winSlash}) ![Round 6](${winBackslash})`,
+    `![Cover](${macIcloud}) ![Screenshot](${wslParens})`,
+    `![Bang](${relBang}) ![RelParens](${relParens})`,
+    `![Wrapped](<${wrapped}> "Title")`,
+    `Files: [DetailsTab.tsx:42](${winFileLink}), [notes.md](${homePath}), [spec](${relDoc})`,
+    "",
+    `\`![Inline code](${winSlash})\``,
+    "",
+    "```md",
+    `![Fence](${macIcloud})`,
+    "```",
+    "",
+    String.raw`\![Escaped](${wslParens})`,
+    "[Prose](see section 1/2)",
+    "![Network](//example.test/a b.png)",
+    "![External](https://example.test/a b.png)",
+    "![Partial](/work/a b.png",
+  ].join("\n");
+
+  expect(chatMarkdownImageSources(authored).map(decodeURI)).toEqual([
+    winSlash,
+    winBackslash,
+    macIcloud,
+    wslParens,
+    relBang,
+    relParens,
+    wrapped,
+  ]);
+
+  const processor = unified().use(remarkParse).use(CHAT_MARKDOWN_REMARK_PLUGINS);
+  const linkUrls: string[] = [];
+  const visit = (node: Root | RootContent) => {
+    if (node.type === "link") linkUrls.push(node.url);
+    if ("children" in node) node.children.forEach(visit);
+  };
+  visit(processor.runSync(processor.parse(authored), authored) as Root);
+  expect(linkUrls.map(decodeURI)).toContain(`file:///${winFileLink}`);
+  expect(linkUrls.map(decodeURI)).toContain(homePath);
+  expect(linkUrls.map(decodeURI)).toContain(relDoc);
+  expect(linkUrls.map(decodeURI)).not.toContain("see section 1/2");
+
+  const codeSpan = "![`label](/work/c d.png)`";
+  expect(
+    markdownWithSpacedFilePaths(codeSpan, () => unified().use(remarkParse).parse(codeSpan)),
+  ).toBe(codeSpan);
+
+  // Backticks inside a fenced code block must not pair with later prose backticks.
+  const fencedBacktick = "~~~\n`unclosed\n~~~\n![real](/tmp/a b.png)\n`tail`";
+  expect(chatMarkdownImageSources(fencedBacktick).map(decodeURI)).toEqual(["/tmp/a b.png"]);
+
+  // A spaced link inside an existing link label must not break the outer link, while a linked image still repairs.
+  const nestedLink = "[outer [inner](/tmp/a b.ts)](https://example.test)";
+  const nestedLinkUrls: string[] = [];
+  const collectLinks = (node: Root | RootContent) => {
+    if (node.type === "link") nestedLinkUrls.push(node.url);
+    if ("children" in node) node.children.forEach(collectLinks);
+  };
+  collectLinks(processor.runSync(processor.parse(nestedLink), nestedLink) as Root);
+  expect(nestedLinkUrls).toEqual(["https://example.test"]);
+
+  const linkedImage = "[![Shot](/tmp/my shot.png)](https://example.test)";
+  expect(chatMarkdownImageSources(linkedImage).map(decodeURI)).toEqual(["/tmp/my shot.png"]);
+
+  // Inline code (including multiline) inside a link label must not block spaced-path repair.
+  for (const codeLabelLink of [
+    "[Open `README.md`](/tmp/My Project/README.md)",
+    "[Open `README\n.md`](/tmp/My Project/README.md)",
+  ]) {
+    const codeLabelUrls: string[] = [];
+    const collectCodeLabelLinks = (node: Root | RootContent) => {
+      if (node.type === "link") codeLabelUrls.push(node.url);
+      if ("children" in node) node.children.forEach(collectCodeLabelLinks);
+    };
+    collectCodeLabelLinks(processor.runSync(processor.parse(codeLabelLink), codeLabelLink) as Root);
+    expect(codeLabelUrls.map(decodeURI)).toEqual(["/tmp/My Project/README.md"]);
+  }
+});
+
+it("keeps authored offsets after repairing multiple spaced file paths", () => {
+  const markdown =
+    "![One](Z:/Demo Dir/one a.png)\t[Two](/tmp/two b.ts) [link](https://example.test)\n\nNext.";
+  const processor = unified().use(remarkParse).use(CHAT_MARKDOWN_REMARK_PLUGINS);
+  const [paragraph, next] = processor.parse(markdown).children;
+  if (paragraph?.type !== "paragraph") throw new Error("Expected a paragraph");
+
+  const sources = paragraph.children
+    .filter((node) => node.type === "image" || node.type === "link")
+    .map((node) => {
+      const { start, end } = node.position!;
+      expect(start.column).toBe(start.offset! + 1);
+      expect(end.column).toBe(end.offset! + 1);
+      return markdown.slice(start.offset, end.offset);
+    });
+  expect(sources).toEqual([
+    "![One](Z:/Demo Dir/one a.png)",
+    "[Two](/tmp/two b.ts)",
+    "[link](https://example.test)",
+  ]);
+  expect(next?.position?.start).toEqual({ line: 3, column: 1, offset: markdown.indexOf("Next.") });
 });
