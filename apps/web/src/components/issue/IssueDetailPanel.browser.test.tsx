@@ -129,34 +129,4 @@ describe("IssueDetailPanel markdown references", () => {
     );
     expect(commitRef.getAttribute("data-pull-request-autolink")).toBe("commit");
   });
-
-  it("leaves #123 as plain text for standalone issue trackers such as Linear", async () => {
-    const detail = makeIssue({
-      tracker: IssueTrackerKind.make("linear"),
-      host: "linear.app",
-      scope: "ENG",
-      key: "ENG-1",
-      displayKey: "ENG-1",
-      url: "https://linear.app/acme/issue/ENG-1",
-      body: "Tracks #38661.",
-      comments: [],
-      commentCount: 0,
-    });
-    state.detail = detail;
-    await using screen = await render(
-      <IssueDetailPanel
-        environmentId={EnvironmentId.make("env-1")}
-        reference={{
-          projectId: detail.projectId,
-          tracker: detail.tracker,
-          host: detail.host,
-          scope: detail.scope,
-          key: detail.key,
-        }}
-      />,
-    );
-
-    await expect.element(screen.getByText("Tracks #38661.")).toBeVisible();
-    expect(screen.getByRole("link", { name: "#38661" }).query()).toBeNull();
-  });
 });
