@@ -599,14 +599,19 @@ describe("shared device stream readiness and recovery", () => {
   });
 });
 
-describe("Android WebRTC device streams", () => {
+describe("WebRTC device streams", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  function setup() {
+  function setup(
+    platform: "ios" | "android" = "android",
+    stream: unknown = { transport: "webrtc" },
+  ) {
     vi.useFakeTimers();
+    // The iOS cases model an Android WebView on a plain-http origin: no WebCodecs.
+    expect("VideoDecoder" in globalThis).toBe(false);
     const sockets: Socket[] = [];
     class Socket {
       static OPEN = 1;
@@ -668,7 +673,7 @@ describe("Android WebRTC device streams", () => {
     const fetch = vi.fn((url: string, _init?: RequestInit) =>
       Promise.resolve(
         url.includes("/api?")
-          ? Response.json({ serial: "emulator-5554", stream: { transport: "webrtc" } })
+          ? Response.json({ serial: "emulator-5554", stream })
           : Response.json({ type: "answer", sdp: "answer-sdp" }),
       ),
     );
@@ -678,12 +683,13 @@ describe("Android WebRTC device streams", () => {
       onScreen: vi.fn(),
       onUnauthorized: vi.fn(),
       onMjpegFallback: vi.fn(),
+      onCanvasVideo: vi.fn(),
       onInputConnected: vi.fn(),
     };
     const present = vi.fn(() => true);
     const client = createDeviceStreamClient(
       {
-        platform: "android",
+        platform,
         deviceId: "session-1",
         access: {
           httpBase: "https://test/api/device-hub",
@@ -695,8 +701,13 @@ describe("Android WebRTC device streams", () => {
       { present },
       events,
     );
-    return { client, events, fetch, peers, videos, sockets, present };
+    const image = new MjpegImage();
+    client.setMjpegImage(image as unknown as HTMLImageElement);
+    return { client, events, fetch, peers, videos, sockets, present, image };
   }
+
+  const serveSim = "https://test/api/device-hub/vendor/serve-sim";
+  const mjpegUrl = `${serveSim}/helper/session-1/stream.mjpeg?hostId=eas`;
 
   it("streams over WebRTC when serve-emu advertises it, with input that reconnects on its own", async () => {
     const { client, events, fetch, peers, videos, sockets, present } = setup();
@@ -728,6 +739,158 @@ describe("Android WebRTC device streams", () => {
     expect(peers).toHaveLength(1);
     expect(peers[0]?.close).not.toHaveBeenCalled();
     expect(events.onStatus).not.toHaveBeenCalled();
+    client.stop();
+  });
+
+  it("streams an iOS simulator over WebRTC instead of MJPEG when WebCodecs is missing", async () => {
+    // T3 Code's own device hub reports "http" and still answers WebRTC offers.
+    const { client, events, fetch, peers, videos, present, image } = setup("ios", {
+      transport: "http",
+      h264Fps: 60,
+    });
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      // The input socket primes serve-sim's capture with one aborted MJPEG request.
+      mjpegUrl,
+      `${serveSim}/api?device=session-1&hostId=eas`,
+      `${serveSim}/helper/session-1/webrtc/offer?hostId=eas`,
+    ]);
+    peers[0]?.ontrack?.({ streams: [{}], track: {} });
+    videos[0]?.callback?.();
+    expect(present).toHaveBeenCalledWith(videos[0], 400, 800);
+    expect(events.onStatus).toHaveBeenLastCalledWith("streaming", undefined);
+    expect(events.onMjpegFallback).not.toHaveBeenCalled();
+    expect(image.src).toBe("");
+    client.stop();
+  });
+
+  it("drops to MJPEG at once when serve-sim refuses the iOS WebRTC offer", async () => {
+    const { client, events, fetch, peers, image } = setup("ios", null);
+    fetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes("/webrtc/offer")
+          ? new Response(null, { status: 404 })
+          : Response.json({ serial: "sim" }),
+      ),
+    );
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peers).toHaveLength(1);
+    expect(peers[0]?.close).toHaveBeenCalled();
+    expect(events.onMjpegFallback).toHaveBeenCalledWith(mjpegUrl);
+    expect(image.src).toBe(mjpegUrl);
+    client.stop();
+  });
+
+  it("falls back to MJPEG once when an iOS WebRTC attempt shows no video", async () => {
+    const { client, events, peers, image } = setup("ios");
+    const imageReady = () => {
+      image.naturalWidth = 400;
+      image.naturalHeight = 800;
+      image.dispatchEvent(new Event("load"));
+    };
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    peers[0]!.connectionState = "failed";
+    peers[0]!.onconnectionstatechange?.();
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(events.onMjpegFallback).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(events.onMjpegFallback).toHaveBeenCalledWith(mjpegUrl);
+    expect(image.src).toBe(mjpegUrl);
+    expect(peers.every((peer) => peer.close.mock.calls.length > 0)).toBe(true);
+    imageReady();
+    expect(events.onStatus).toHaveBeenLastCalledWith("streaming", undefined);
+    const attempts = peers.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(peers).toHaveLength(attempts);
+    expect(events.onStatus).not.toHaveBeenCalledWith("error", expect.anything());
+
+    // A refused MJPEG image switches to WebRTC, which then fails instead of bouncing back.
+    image.dispatchEvent(new Event("error"));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(peers).toHaveLength(attempts + 1);
+    expect(events.onMjpegFallback).toHaveBeenCalledOnce();
+    expect(events.onStatus).toHaveBeenLastCalledWith("error", expect.any(String));
+    client.stop();
+  });
+
+  it("gives WebRTC and then MJPEG a full window each after the probe times out", async () => {
+    const { client, events, fetch, peers, image } = setup("ios");
+    fetch.mockImplementation((url: string, init?: RequestInit) =>
+      url.includes("/api?")
+        ? new Promise<Response>((_resolve, reject) =>
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            ),
+          )
+        : Promise.resolve(Response.json({ type: "answer", sdp: "answer-sdp" })),
+    );
+    client.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(peers).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(events.onMjpegFallback).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(events.onMjpegFallback).toHaveBeenCalledWith(mjpegUrl);
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(events.onStatus).not.toHaveBeenCalledWith("error", expect.anything());
+    image.naturalWidth = 400;
+    image.naturalHeight = 800;
+    image.dispatchEvent(new Event("load"));
+    expect(events.onStatus).toHaveBeenLastCalledWith("streaming", undefined);
+    client.stop();
+  });
+
+  it("shows the WebRTC canvas again when a restart follows an MJPEG fallback", async () => {
+    const { client, events, peers, videos, present } = setup("ios");
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    peers[0]!.connectionState = "failed";
+    peers[0]!.onconnectionstatechange?.();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.onMjpegFallback).toHaveBeenCalledWith(mjpegUrl);
+    client.stop();
+    events.onCanvasVideo.mockClear();
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events.onCanvasVideo).toHaveBeenCalledOnce();
+    const video = videos.at(-1)!;
+    peers.at(-1)!.ontrack?.({ streams: [{}], track: {} });
+    video.callback?.();
+    expect(present).toHaveBeenLastCalledWith(video, 400, 800);
+    expect(events.onStatus).toHaveBeenLastCalledWith("streaming", undefined);
+    client.stop();
+  });
+
+  it("restarts the iOS WebRTC feed when Duo panels are cleared without WebCodecs", async () => {
+    const { client, fetch, sockets } = setup("ios");
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // A screen config (tag 0x82) with a hinge lets the viewer enter Duo.
+    const config = new TextEncoder().encode(
+      JSON.stringify({
+        width: 400,
+        height: 800,
+        orientation: "portrait",
+        supportsHingeAngle: true,
+      }),
+    );
+    const message = new Uint8Array(1 + config.length);
+    message[0] = 0x82;
+    message.set(config, 1);
+    sockets[0]!.onmessage?.({ data: message.buffer } as unknown as { data: string });
+    const panel = { present: vi.fn(() => true) };
+    client.setDuoPanels({ cover: panel, inner: panel } as unknown as Parameters<
+      typeof client.setDuoPanels
+    >[0]);
+    const mainOffer = `${serveSim}/helper/session-1/webrtc/offer?hostId=eas`;
+    const offers = () => fetch.mock.calls.filter(([url]) => url === mainOffer).length;
+    const before = offers();
+    client.setDuoPanels(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(offers()).toBe(before + 1);
     client.stop();
   });
 });

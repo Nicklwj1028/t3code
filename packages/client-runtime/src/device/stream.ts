@@ -139,6 +139,9 @@ const FIRST_FRAME_TIMEOUT_MS = 15_000;
 // recovers is left alone.
 const WEBRTC_STALL_TIMEOUT_MS = FIRST_FRAME_TIMEOUT_MS;
 const WEBRTC_STALL_CHECK_MS = 5_000;
+// An iOS viewer without WebCodecs tries WebRTC first and has MJPEG to fall
+// back on, so it waits less for a first frame than a viewer with no fallback.
+const IOS_WEBRTC_TRIAL_TIMEOUT_MS = 8_000;
 const TRANSPORT_PROBE_TIMEOUT_MS = 5_000;
 // Offers carry every candidate: serve-sim does not accept trickled ICE.
 const ICE_GATHERING_TIMEOUT_MS = 2_000;
@@ -444,6 +447,9 @@ export function createDeviceStreamClient(
   let firstFrame = false;
   let configuring = false;
   let mjpeg = false;
+  // Without WebCodecs an iOS feed tries WebRTC before MJPEG and drops to MJPEG once if a
+  // first-frame window passes without video. Cleared then, so MJPEG errors cannot bounce it.
+  let mjpegIfWebRtcStalls = false;
   let generation = 0;
   let decoderEpoch = 0;
   let frameTimer: ReturnType<typeof setTimeout> | null = null;
@@ -513,8 +519,11 @@ export function createDeviceStreamClient(
     firstFrame = false;
     if (frameTimer === null) {
       frameTimer = setTimeout(
-        () => fail(resolve(msg("No video received from the device. Reconnect to try again."))),
-        FIRST_FRAME_TIMEOUT_MS,
+        () =>
+          mjpegIfWebRtcStalls
+            ? webRtcToMjpeg()
+            : fail(resolve(msg("No video received from the device. Reconnect to try again."))),
+        mjpegIfWebRtcStalls ? IOS_WEBRTC_TRIAL_TIMEOUT_MS : FIRST_FRAME_TIMEOUT_MS,
       );
     }
     setStatus("connecting", detail);
@@ -1060,12 +1069,15 @@ export function createDeviceStreamClient(
       }
       if (response.status === 401 || response.status === 403) return handleUnauthorized();
       // 409: another viewer is still negotiating with this simulator.
-      if (!response.ok)
+      if (!response.ok) {
+        // Any other refusal means this serve-sim will not stream WebRTC.
+        if (mjpegIfWebRtcStalls && response.status !== 409) return webRtcToMjpeg();
         return retry(
           resolve(
             msg("Device stream offer failed ({status}). Retrying…", { status: response.status }),
           ),
         );
+      }
       const answer = decodeWebRtcAnswer(await response.json());
       if (!isCurrent()) return;
       if (Option.isNone(answer))
@@ -1074,6 +1086,39 @@ export function createDeviceStreamClient(
     } catch (cause) {
       retry((cause as Error).message);
     }
+  };
+
+  const webRtcToMjpeg = () => {
+    mjpegIfWebRtcStalls = false;
+    videoGeneration++;
+    closePeer();
+    clearTimeout(retryTimers.get("video"));
+    retryTimers.delete("video");
+    clearFrameTimer();
+    fallBackToMjpeg();
+  };
+
+  const startIosWithoutWebCodecs = async () => {
+    const session = generation;
+    if (typeof RTCPeerConnection === "undefined" || target.preferMjpeg || target.panelId)
+      return fallBackToMjpeg();
+    // serve-sim answers WebRTC offers whatever transport /api reports; a
+    // hub started without `--transport` reports "http". The probe only
+    // supplies ICE servers when there are any.
+    const settings = (await probeWebRtc()) ?? { transport: "webrtc" as const };
+    if (stopped || generation !== session) return;
+    mjpegIfWebRtcStalls = true;
+    // The probe used part of the first-frame window; the WebRTC attempt gets its own.
+    clearFrameTimer();
+    connecting();
+    // A restart can follow an MJPEG fallback that left the canvas hidden.
+    if (mjpeg) {
+      mjpeg = false;
+      releaseImage?.();
+      releaseImage = null;
+    }
+    events.onCanvasVideo?.();
+    void readWebRtc(settings);
   };
 
   /**
@@ -1335,7 +1380,7 @@ export function createDeviceStreamClient(
     } else if (platform === "ios") {
       if (!target.videoOnly) void connectIosInput();
       if (useWebCodecs) void readIosVideo();
-      else fallBackToMjpeg();
+      else void startIosWithoutWebCodecs();
     } else void startAndroid();
   };
 
@@ -1350,6 +1395,7 @@ export function createDeviceStreamClient(
     panelClients = [];
     panelSinks = null;
     mjpeg = false;
+    mjpegIfWebRtcStalls = false;
     clearFrameTimer();
     if (videoReadTimer !== null) clearTimeout(videoReadTimer);
     videoReadTimer = null;
@@ -1418,6 +1464,7 @@ export function createDeviceStreamClient(
       panelClients = [];
       if (!panels) {
         if (useWebCodecs) void readIosVideo();
+        else void startIosWithoutWebCodecs();
         return;
       }
       startDuoVideo(panels);
