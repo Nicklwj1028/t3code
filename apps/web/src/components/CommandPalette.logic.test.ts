@@ -184,6 +184,47 @@ describe("buildThreadActionItems", () => {
     expect(runThread).toHaveBeenCalledWith(remote);
   });
 
+  it("reuses the cached threadSearch subject for unchanged thread shells across calls", () => {
+    const thread = makeThread({ title: "Fix palette caching", branch: "perf/cache" });
+    const projectByKey = new Map([
+      [`${thread.environmentId}:${thread.projectId}`, { title: "T3 Code" }],
+    ]);
+    const runThread = vi.fn(async () => {});
+    const first = buildThreadActionItems({
+      threads: [thread],
+      projectByKey,
+      icon: null,
+      runThread,
+    });
+    const second = buildThreadActionItems({
+      threads: [thread],
+      projectByKey,
+      icon: null,
+      runThread,
+    });
+    expect(first[0]?.threadSearch).toBeDefined();
+    expect(first[0]?.threadSearch).toBe(second[0]?.threadSearch);
+  });
+
+  it("labels each thread with its own elapsed time when threads share a time bucket", () => {
+    vi.useFakeTimers({ now: Date.parse("2026-03-10T12:00:00.000Z") });
+    try {
+      const items = buildThreadActionItems({
+        threads: [
+          makeThread({ id: ThreadId.make("a"), updatedAt: "2026-03-10T11:55:00.000Z" }),
+          makeThread({ id: ThreadId.make("b"), updatedAt: "2026-03-10T11:55:30.000Z" }),
+          makeThread({ id: ThreadId.make("c"), updatedAt: "2026-03-08T12:00:00.000Z" }),
+        ],
+        projectByKey: new Map(),
+        icon: null,
+        runThread: vi.fn(async () => {}),
+      });
+      expect(items.map((item) => item.timestamp)).toEqual(["5m ago", "4m ago", "2d ago"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ranks thread title matches ahead of contextual project-name matches", () => {
     const threadItems = buildThreadActionItems({
       threads: [

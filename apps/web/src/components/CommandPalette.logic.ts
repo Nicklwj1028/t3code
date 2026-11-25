@@ -35,7 +35,7 @@ import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { type ReactNode } from "react";
 import { msg } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
-import { formatRelativeTimeLabel } from "../timestampFormat";
+import { relativeElapsedLabel, relativeTimeElapsedMs } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 
 export const RECENT_THREAD_LIMIT = 12;
@@ -464,6 +464,20 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         delegatedUnderParent,
       ),
   );
+  // Resolving a translated label costs far more than the rest of a row, and
+  // threads share a few elapsed buckets, so each bucket is resolved once.
+  const nowMs = Date.now();
+  const labelByElapsedMs = new Map<number, string>();
+  const timestampLabel = (isoDate: string) => {
+    const elapsedMs = relativeTimeElapsedMs(isoDate, nowMs);
+    if (elapsedMs === null) return "";
+    let label = labelByElapsedMs.get(elapsedMs);
+    if (label === undefined) {
+      label = relativeElapsedLabel(elapsedMs, resolve);
+      labelByElapsedMs.set(elapsedMs, label);
+    }
+    return label;
+  };
 
   return visibleThreads.map((thread) => {
     const projectTitle = input.projectByKey.get(
@@ -496,21 +510,11 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         value: `thread:${thread.environmentId}:${thread.id}`,
         threadRef: { environmentId: thread.environmentId, threadId: thread.id },
         searchTerms: [thread.title],
-        threadSearch: threadSearchSubject(
-          {
-            ...thread,
-            latestUserMessageAt: thread.latestUserMessageAt ?? null,
-            opens: thread.opens ?? null,
-          },
-          projectTitle,
-          input.environmentLabelOf?.(thread),
-        ),
+        threadSearch: threadSearchSubject(thread, projectTitle, input.environmentLabelOf?.(thread)),
         title: thread.title,
         description,
-        timestamp: formatRelativeTimeLabel(
+        timestamp: timestampLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
-          undefined,
-          resolve,
         ),
         icon: input.icon,
       },
