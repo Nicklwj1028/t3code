@@ -305,6 +305,15 @@ const projectFaviconAsset = Effect.fn("AssetAccess.projectFaviconAsset")(functio
     : null;
 });
 
+const resolveRealPathOrSelf = Effect.fn("AssetAccess.resolveRealPathOrSelf")(function* (
+  filePath: string,
+) {
+  // Resolving a network path signs in to its host before containment is checked.
+  if (isNetworkPath(filePath)) return filePath;
+  const fileSystem = yield* FileSystem.FileSystem;
+  return yield* fileSystem.realPath(filePath).pipe(Effect.orElseSucceed(() => filePath));
+});
+
 const resolveCanonicalFile = Effect.fn("AssetAccess.resolveCanonicalFile")(function* (
   filePath: string,
 ) {
@@ -502,8 +511,13 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
     const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+    // A root registered through a symlink spells a file differently from the real path an agent
+    // writes, so both are compared resolved; an unresolvable path is compared as written.
     const relativePath = path.isAbsolute(input.requestedPath)
-      ? path.relative(input.workspaceRoot, input.requestedPath)
+      ? path.relative(
+          yield* resolveRealPathOrSelf(input.workspaceRoot),
+          yield* resolveRealPathOrSelf(input.requestedPath),
+        )
       : input.requestedPath;
     const resolved = yield* workspacePaths
       .resolveRelativePathWithinRoot({ workspaceRoot: input.workspaceRoot, relativePath })
@@ -627,6 +641,36 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         yield* toHostDrivePath(input.resource.path),
         yield* HostProcess.HomeDirectory,
       );
+      // Clients pick media-file by comparing paths as written, so a page in a project registered
+      // through a symlink arrives here. As a workspace file it loads its stylesheets and scripts.
+      if (
+        input.workspaceRoot &&
+        path.isAbsolute(requestedPath) &&
+        !isNetworkPath(requestedPath) &&
+        input.resource.disposition !== "attachment" &&
+        /\.html?$/i.test(requestedPath)
+      ) {
+        const workspaceRoot = input.workspaceRoot;
+        const resource = input.resource;
+        const asWorkspaceFile = yield* workspacePaths.normalizeWorkspaceRoot(workspaceRoot).pipe(
+          Effect.flatMap((normalizedRoot) =>
+            finalizeWorkspaceFileAsset({
+              workspaceRoot: normalizedRoot,
+              requestedPath,
+              resource,
+              expiresAt,
+            }),
+          ),
+          Effect.option,
+        );
+        if (Option.isSome(asWorkspaceFile)) {
+          claims = asWorkspaceFile.value.claims;
+          fileName = asWorkspaceFile.value.fileName;
+          imageDimensions = asWorkspaceFile.value.imageDimensions;
+          fileRevision = asWorkspaceFile.value.fileRevision;
+          break;
+        }
+      }
       if (!path.isAbsolute(requestedPath)) {
         if (!input.workspaceRoot) {
           return yield* new AssetWorkspaceContextNotFoundError({ resource: input.resource });
