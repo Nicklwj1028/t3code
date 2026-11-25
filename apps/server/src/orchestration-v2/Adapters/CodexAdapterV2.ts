@@ -1437,6 +1437,8 @@ function failureResetAt(
 interface ActiveCodexTurnContext {
   hookStopReason?: string;
   appliedServiceTier?: string;
+  /** Picked while the turn runs; a capacity retry starts on it. */
+  latestModelSelection?: ModelSelection;
   capacityRetryAttempt?: number;
   capacityRetryPending?: Deferred.Deferred<ActiveCodexTurnContext | undefined>;
   closedCommandItemIds?: ReadonlySet<string>;
@@ -7709,17 +7711,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     );
                     if (!claimed) return;
                     // Notifications before the RPC response also take the terminalization permit.
+                    const modelSelection =
+                      context.latestModelSelection ?? context.input.modelSelection;
                     yield* startNativeTurn(
                       {
                         ...context.input,
+                        modelSelection,
                         // A speed changed during the failed attempt outlives the retry.
                         ...(context.appliedServiceTier === undefined
                           ? {}
                           : {
                               modelSelection: {
-                                ...context.input.modelSelection,
+                                ...modelSelection,
                                 options: [
-                                  ...(context.input.modelSelection.options ?? []).filter(
+                                  ...(modelSelection.options ?? []).filter(
                                     (option) =>
                                       option.id !== "serviceTier" && option.id !== "fastMode",
                                   ),
@@ -8739,7 +8744,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             modelSelection,
           }) {
             const threadId = providerThread.nativeThreadRef?.nativeId;
-            if (threadId != null) yield* applyServiceTier(threadId, modelSelection);
+            if (threadId == null) return;
+            for (const turn of (yield* Ref.get(activeTurns)).values()) {
+              if (turn.providerThread.nativeThreadRef?.nativeId === threadId) {
+                turn.latestModelSelection = modelSelection;
+              }
+            }
+            yield* applyServiceTier(threadId, modelSelection);
           }),
           // Dropping this connection's subscription lets the shared app-server
           // shut the native thread (and its MCP servers) down once it is idle.
