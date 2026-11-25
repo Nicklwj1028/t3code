@@ -119,6 +119,46 @@ describe("thread relationships", () => {
     ]);
   });
 
+  it("keeps a queued child's status over an active parent subagent record", () => {
+    const parent = ThreadId.make("thread-parent");
+    const child = ThreadId.make("thread-child");
+    const graph = deriveThreadRelationshipGraph({
+      threads: [
+        {
+          id: child,
+          title: "Queued child",
+          activityRunStatus: null,
+          status: "queued",
+          latestRunId: null,
+          forkedFrom: null,
+          lineage: {
+            rootThreadId: parent,
+            parentThreadId: parent,
+            relationshipToParent: "subagent",
+          },
+        },
+      ] as never,
+      projection: {
+        thread: {
+          id: parent,
+          forkedFrom: null,
+          lineage: { rootThreadId: parent, parentThreadId: null, relationshipToParent: null },
+        },
+        subagents: [{ childThreadId: child, status: "running" }],
+        contextTransfers: [],
+      } as never,
+    });
+
+    expect(graph.edges).toEqual([
+      expect.objectContaining({
+        sourceThreadId: parent,
+        targetThreadId: child,
+        kind: "subagent",
+        status: "queued",
+      }),
+    ]);
+  });
+
   it("keeps missing parents and cycles navigable without recursive traversal", () => {
     const root = ThreadId.make("thread-root");
     const child = ThreadId.make("thread-child");
