@@ -478,7 +478,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   const [publishVisibility, setPublishVisibility] =
     useState<SourceControlRepositoryVisibility>("private");
   const [publishRemoteName, setPublishRemoteName] = useState("origin");
-  const [publishProtocol, setPublishProtocol] = useState<SourceControlCloneProtocol>("ssh");
+  const [publishProtocol, setPublishProtocol] = useState<SourceControlCloneProtocol>("auto");
   const [publishWizardStep, setPublishWizardStep] = useState(0);
   const [publishAdvancedOpen, setPublishAdvancedOpen] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -849,7 +849,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       <T>Protocol</T>
                     </span>
                     <ToggleGroup
-                      value={[publishProtocol]}
+                      value={[publishProtocol === "https" ? "https" : "ssh"]}
                       onValueChange={(next) => {
                         const protocol = next[0];
                         if (protocol === "ssh" || protocol === "https") {
