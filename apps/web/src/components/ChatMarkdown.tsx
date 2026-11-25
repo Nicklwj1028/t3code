@@ -252,6 +252,7 @@ interface ChatMarkdownProps {
   skills?: ReadonlyArray<ServerProviderSkill>;
   className?: string;
   lineBreaks?: boolean;
+  preserveFieldLines?: boolean;
   parseRawHtml?: boolean;
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   onRunShellCommand?: ((command: string) => void) | undefined;
@@ -1913,7 +1914,7 @@ function wordsOptions(
 ): WordsHastOptions {
   let byFlags = markdownOptions.get(extensions);
   if (!byFlags) markdownOptions.set(extensions, (byFlags = new Map()));
-  const key = `${+flags.math}${+flags.breaks}${+flags.escapeHtml}${+flags.insights}`;
+  const key = `${+flags.math}${+flags.breaks}${+flags.escapeHtml}${+flags.insights}${+Boolean(flags.fieldLines)}`;
   let options = byFlags.get(key);
   if (!options) byFlags.set(key, (options = { ...flags, extensions }));
   return options;
@@ -2076,6 +2077,7 @@ function ChatMarkdown({
   className,
   inline = false,
   lineBreaks = false,
+  preserveFieldLines = false,
   parseRawHtml = true,
   extensions = NO_EXTENSIONS,
   renderInsights = false,
@@ -2096,6 +2098,7 @@ function ChatMarkdown({
   const markdown = wordsOptions(extensions, {
     math: componentState.mathEnabled,
     breaks: lineBreaks,
+    fieldLines: preserveFieldLines,
     escapeHtml: !parseRawHtml,
     insights: renderInsights && text.includes("★ Insight"),
   });
