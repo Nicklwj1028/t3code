@@ -296,7 +296,10 @@ describe("Antigravity model catalog", () => {
     expect(thinkingOf("gemini")).toMatchObject({ id: "thinking_level", currentValue: "high" });
     expect(thinkingOf("claude")).toMatchObject({ id: "thinking_level", currentValue: "low" });
     expect(thinkingOf("plain")).toBeUndefined();
-    expect(thinkingOf("unseen")).toBeUndefined();
+    const modelOf = (slug: string) => models.find((model) => model.slug === slug);
+    // An observed model without levels clears them; an unobserved one (null) leaves them to the registry.
+    expect(modelOf("plain")?.capabilities).toEqual({ optionDescriptors: [] });
+    expect(modelOf("unseen")?.capabilities).toBeNull();
   });
 
   it("keeps each model's probed thinking levels after a restart observes only the active model", () => {
@@ -364,6 +367,86 @@ describe("Antigravity model catalog", () => {
 });
 
 it.layer(layerTest)("Antigravity provider snapshots", (it) => {
+  it.effect("keeps a model's reported thinking levels after a restart selects another model", () =>
+    Effect.gen(function* () {
+      const levels = (currentValue: string, values: ReadonlyArray<string>) =>
+        ({
+          id: "thinking_level",
+          name: "Thinking Level",
+          category: "thought_level",
+          type: "select",
+          currentValue,
+          options: values.map((value) => ({ value, name: value })),
+        }) satisfies EffectAcpSchema.SessionConfigOption;
+      const selecting = (model: string, thinking?: EffectAcpSchema.SessionConfigOption) => ({
+        ...started,
+        sessionSetupResult: {
+          ...sessionSetupResult,
+          configOptions: [
+            {
+              ...modelConfig,
+              currentValue: model,
+              options: [
+                { value: "deep", name: "Deep" },
+                { value: "fast", name: "Fast" },
+              ],
+            },
+            ...(thinking ? [thinking] : []),
+          ],
+        },
+      });
+      const choicesOf = (provider: ServerProvider, slug: string) =>
+        provider.models
+          .find((model) => model.slug === slug)
+          ?.capabilities?.optionDescriptors?.flatMap((descriptor) =>
+            descriptor.type === "select" ? descriptor.options.map((option) => option.id) : [],
+          );
+      const capabilitiesOf = (provider: ServerProvider, slug: string) =>
+        provider.models.find((model) => model.slug === slug)?.capabilities;
+
+      const before = yield* makeHarness();
+      yield* before.initialize;
+      yield* before.provider.onSessionStarted(
+        selecting("deep", levels("low", ["low", "medium", "high", "xhigh"])),
+      );
+      const published = yield* before.provider.snapshot.getSnapshot;
+      expect(choicesOf(published, "deep")).toEqual(["low", "medium", "high", "xhigh"]);
+
+      // A restarted server has the published catalog but has observed no model yet.
+      const after = yield* makeHarness();
+      yield* after.initialize;
+      yield* after.provider.onSessionStarted(
+        selecting("fast", levels("low", ["low", "medium", "high"])),
+      );
+      const merged = mergeProviderSnapshot(published, yield* after.provider.snapshot.getSnapshot);
+      expect(choicesOf(merged, "fast")).toEqual(["low", "medium", "high"]);
+      expect(choicesOf(merged, "deep")).toEqual(["low", "medium", "high", "xhigh"]);
+
+      // A model observed without thinking options clears the levels it had before.
+      const plain = yield* makeHarness();
+      yield* plain.initialize;
+      yield* plain.provider.onSessionStarted(selecting("fast"));
+      const cleared = mergeProviderSnapshot(merged, yield* plain.provider.snapshot.getSnapshot);
+      expect(choicesOf(cleared, "fast")).toEqual([]);
+      expect(choicesOf(cleared, "deep")).toEqual(["low", "medium", "high", "xhigh"]);
+      expect(capabilitiesOf(cleared, "fast")).toEqual({ optionDescriptors: [] });
+
+      // A later unobserved snapshot retains the confirmed empty capabilities.
+      const unobserved = yield* makeHarness();
+      yield* unobserved.initialize;
+      yield* unobserved.provider.onSessionStarted(
+        selecting("deep", levels("low", ["low", "medium", "high", "xhigh"])),
+      );
+      const preservedEmpty = mergeProviderSnapshot(
+        cleared,
+        yield* unobserved.provider.snapshot.getSnapshot,
+      );
+      expect(capabilitiesOf(preservedEmpty, "fast")).toEqual({ optionDescriptors: [] });
+      expect(choicesOf(preservedEmpty, "fast")).toEqual([]);
+      expect(choicesOf(preservedEmpty, "deep")).toEqual(["low", "medium", "high", "xhigh"]);
+    }),
+  );
+
   it.effect("does not probe or run helper safety checks while disabled", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ enabled: false });

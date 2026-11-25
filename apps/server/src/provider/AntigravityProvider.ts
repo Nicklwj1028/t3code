@@ -111,8 +111,9 @@ export function buildAntigravityModelsFromSession(
         ...(entry.value === currentValue
           ? { isDefault: true, aliases: [ANTIGRAVITY_DEFAULT_MODEL] }
           : {}),
-        // Levels differ per model; an unobserved model reports none so the registry keeps its cached ones.
-        capabilities: thinkingCapabilities(observed),
+        // Levels differ per model, so an unobserved model reports null rather than borrowing
+        // the selected model's; the registry then keeps the levels it last reported.
+        capabilities: observed === undefined ? null : thinkingCapabilities(observed),
       },
     ];
   });
