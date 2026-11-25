@@ -2022,6 +2022,26 @@ function acpSubagentHasPendingBackgroundWork(subagent: ActiveAcpSubagent): boole
   );
 }
 
+/**
+ * Finds a tracked tool call by its raw ACP toolCallId on the root turn, then on its subagents.
+ * Devin sends a subagent's tool and its permission request on the root session, so only
+ * root-session requests look in subagents; tool ids are unique per session, not per turn.
+ */
+function findTrackedTurnToolCall(
+  turn: ActiveAcpTurn,
+  toolCallId: string,
+  onRootSession: boolean,
+): AcpToolCallState | undefined {
+  const rootTool = turn.tools.get(toolCallId);
+  if (rootTool !== undefined || !onRootSession) return rootTool;
+  for (const subagent of turn.subagents.values()) {
+    for (const tool of subagent.toolState.tools.values()) {
+      if (tool.toolCallId === toolCallId) return tool;
+    }
+  }
+  return undefined;
+}
+
 type AcpCarryoverSubagents = {
   readonly sessionId: string;
   /** The root's subscriber keeps ingesting, so late child terminals can still project. */
@@ -7602,7 +7622,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 trackedTurn !== null && nativeParams.sessionId === (yield* Ref.get(activeSessionId))
                   ? withTrackedPermissionToolCall(
                       nativeParams,
-                      trackedTurn.tools.get(nativeParams.toolCall.toolCallId),
+                      findTrackedTurnToolCall(trackedTurn, nativeParams.toolCall.toolCallId, true),
                     )
                   : nativeParams;
               const transportRequestId = requestContext.requestId;
@@ -7651,7 +7671,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   // off the permission request for that call; take it from the
                   // tool already seen under the same id so policy can tell a
                   // read from a write.
-                  const knownKind = context?.tools.get(params.toolCall.toolCallId)?.kind;
+                  const knownKind =
+                    context === null
+                      ? undefined
+                      : findTrackedTurnToolCall(
+                          context,
+                          params.toolCall.toolCallId,
+                          params.sessionId === (yield* Ref.get(activeSessionId)),
+                        )?.kind;
                   const disposition = dispositionFor(
                     context?.input.runtimePolicy ?? latestRuntimePolicy,
                     params.toolCall.kind == null && knownKind !== undefined
