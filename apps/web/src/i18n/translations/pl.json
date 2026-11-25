@@ -3232,7 +3232,7 @@
   "c54cc9c75db9dc58": "Zatwierdzaj tylko logowanie, które właśnie rozpocząłeś.",
   "e9f4b93c4ec30453": "Kod logowania",
   "33194f3e1b80f838": [
-    "Uzyskaj go w opcji Use T3 Code in another app (MCP), w Ustawienia → Udostępnianie i dostęp albo po wykonaniu",
+    "Uzyskaj go w opcji Użyj T3 Code w innej aplikacji (MCP), w Ustawienia → Udostępnianie i dostęp albo po wykonaniu",
     " ",
     {
       "t": "code",
@@ -8932,7 +8932,7 @@
     {
       "t": "Link",
       "i": 1,
-      "c": "Sharing & access"
+      "c": "Udostępnianie i dostęp"
     },
     ". Wyłączenie kończy wszystkie linki gości."
   ],
@@ -8942,7 +8942,7 @@
     {
       "t": "Link",
       "i": 1,
-      "c": "Connections"
+      "c": "Połączenia"
     },
     ". Dopóki jest wyłączone, przez powiązanie nic nowego się nie uruchamia; działające zadania kończą się."
   ],
@@ -8960,7 +8960,7 @@
     {
       "t": "Link",
       "i": 2,
-      "c": "Devices"
+      "c": "Urządzenia"
     },
     ". Wersja alfa, która może się zmienić lub zepsuć. T3 Code nigdy nie instaluje Simlock."
   ],
@@ -9077,7 +9077,7 @@
     {
       "t": "a",
       "i": 2,
-      "c": "More info"
+      "c": "Więcej informacji"
     }
   ],
   "78196d04f05923d0": "Alerty systemowe, gdy wątek się zakończy, zakończy się niepowodzeniem albo wymaga danych lub zatwierdzenia. Dotyczy tego urządzenia, gdy T3 Code jest otwarty.",
