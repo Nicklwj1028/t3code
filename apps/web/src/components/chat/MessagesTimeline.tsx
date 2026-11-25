@@ -1,3 +1,6 @@
+import { readAloudController } from "../../speech/readAloud";
+import { readAloudSourceAt } from "../../speech/readAloudHighlight";
+import { toastReadAloudError } from "./ReadAloudButton";
 import { T, useGT, useMessages, Var } from "gt-react";
 import type { SideThreadOpenIntent } from "@t3tools/client-runtime/side-thread";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/models";
@@ -350,6 +353,14 @@ interface MessagesTimelineProps {
 }
 
 export function MessagesTimeline(props: MessagesTimelineProps) {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Speech follows the displayed thread rather than the lifetime of virtualized message rows.
+  useEffect(
+    () => () => {
+      if (readAloudController.getSnapshot().id?.startsWith(`${props.routeThreadKey}:`))
+        readAloudController.stop();
+    },
+    [props.routeThreadKey],
+  );
   const find = useContext(ThreadFindTimelineContext);
   const findOpen = find?.findOpen ?? props.findOpen;
   return (
@@ -782,6 +793,36 @@ const ConversationTimeline = memo(function ConversationTimeline({
     revealedMessageId,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
+  const readAloudSettings = useClientSettings((settings) => settings.readAloud);
+  // Read aloud reads only finished replies, as the reply's own button does.
+  const readableText = (messageId: string) => {
+    const row = rows.find(
+      (candidate) => candidate.kind === "message" && candidate.message.id === messageId,
+    );
+    return row?.kind === "message" &&
+      row.message.role === "assistant" &&
+      !row.message.streaming &&
+      row.message.text.trim()
+      ? row.message.text
+      : null;
+  };
+  const readFromHere =
+    readAloudSettings.provider === "off"
+      ? undefined
+      : {
+          canRead: (messageId: string) => readableText(messageId) !== null,
+          read: (messageId: string, node: Node, offset: number) => {
+            const markdown = readableText(messageId);
+            if (markdown === null) return;
+            const id = `${routeThreadKey}:${messageId}`;
+            const from = readAloudSourceAt(id, markdown, node, offset);
+            void (
+              from === null
+                ? readAloudController.start(id, markdown, readAloudSettings)
+                : readAloudController.start(id, markdown, readAloudSettings, from)
+            ).then(() => toastReadAloudError(id, gt("Could not read aloud")));
+          },
+        };
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1486,11 +1527,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
             className="relative h-full min-h-0"
             data-assistant-citation-viewport="true"
           >
-            {onCiteAssistantText && citationThreadRef ? (
+            {(onCiteAssistantText || readFromHere) && citationThreadRef ? (
               <AssistantSelectionToolbar
                 viewport={timelineViewportElement}
                 threadRef={citationThreadRef}
-                onCite={onCiteAssistantText}
+                {...(onCiteAssistantText ? { onCite: onCiteAssistantText } : {})}
+                {...(readFromHere ? { readFromHere } : {})}
               />
             ) : null}
             <LegendList<MessagesTimelineRow>
