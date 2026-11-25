@@ -19,13 +19,14 @@ import {
 import type * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
-import { expect, it, vi } from "vite-plus/test";
+import { expect, it, onTestFinished, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
 
 import { AppRoot } from "~/AppRoot";
 // The route loads ChatView lazily, and its first transform (React Compiler over ~4k lines)
 // takes 6-11s; importing it here keeps that out of the test's timeout.
 import "~/components/ChatView";
+import { openVimMessageText } from "~/components/chat/vimMessageText";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
@@ -133,11 +134,20 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-it("opens a linked Linear issue from an inactive thread's sidebar badge", async () => {
+function vimCursorRange() {
+  const range = CSS.highlights.get("t3-vim-cursor")?.values().next().value;
+  return range instanceof Range ? range : undefined;
+}
+
+function installStylesheet() {
   const style = document.createElement("style");
   style.textContent = stylesheet;
   document.head.append(style);
-  using _style = { [Symbol.dispose]: () => style.remove() };
+  return { [Symbol.dispose]: () => style.remove() };
+}
+
+it("opens a linked Linear issue from an inactive thread's sidebar badge", async () => {
+  using _style = installStylesheet();
   const first = threadWithHistory("issue-first", 1);
   const linked = threadWithHistory("issue-linked", 1);
   const issueRef = {
@@ -988,6 +998,7 @@ it("a subagent tab shows its read-only bar under no header of its own", async ()
   using _environment = installFakeEnvironment([parent, subagent]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    vimModeEnabled: true,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const parentRef = scopeThreadRef(ENVIRONMENT_ID, parent.id);
@@ -1011,6 +1022,15 @@ it("a subagent tab shows its read-only bar under no header of its own", async ()
   await expect
     .element(screen.getByRole("textbox", { name: `Message ${parent.title}`, exact: true }))
     .toBeVisible();
+  const enter = pane.getByRole("button", { name: "Enter Vim normal mode" });
+  await expect.element(pane.getByText("INSERT", { exact: true })).not.toBeInTheDocument();
+  await enter.click();
+  await expect.element(pane.getByRole("button", { name: "Exit Vim navigation" })).toHaveFocus();
+  await userEvent.keyboard("ggvip");
+  await vi.waitFor(() => expect(document.getSelection()?.toString()).toContain("subagent-child"));
+  await userEvent.keyboard("{Escape}{Escape}");
+  await expect.element(enter).toHaveFocus();
+  await expect.element(pane.getByText("NORMAL", { exact: true })).not.toBeInTheDocument();
 });
 
 it("/side sends the draft's attachments and context, and keeps them when it does not start", async () => {
@@ -1148,4 +1168,520 @@ it("opening Settings without a page event closes the composer model picker and p
   await act(() => router.navigate({ to: "/settings" }));
   await expect.element(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await expect.element(permissions).not.toBeInTheDocument();
+});
+
+it("selects and yanks sent prompts and assistant replies across virtualized Vim history", async () => {
+  using _style = installStylesheet();
+  await page.viewport(1280, 800);
+  const thread = threadWithHistory("vim-replies", 24);
+  const paragraph = "我的👩🏽‍💻提问";
+  const prompt = paragraph + "\n\n检查build_step结果";
+  const reply = assistantItem(
+    thread.id,
+    thread.runs[1]!.id,
+    "vim-replies-assistant-1",
+    3,
+    "中**文**👩🏽‍💻测试  \n仍在同一段\n\n第二段",
+  );
+  using _environment = installFakeEnvironment([
+    {
+      ...thread,
+      items: thread.items.map((item) => {
+        if (item.id === reply.id) return reply;
+        if (item.type === "user_message" && item.ordinal === 0) return { ...item, text: prompt };
+        if (item.type === "user_message" && item.ordinal === 4) return { ...item, text: "" };
+        return item;
+      }),
+    },
+  ]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    router: false,
+  });
+  const toggleVimInSettings = async (enabled: boolean) => {
+    await act(() => router.navigate({ to: "/settings/chat" }));
+    const toggle = page.getByRole("switch", { name: "Vim mode" });
+    await expect.element(toggle).toHaveAttribute("aria-checked", String(!enabled));
+    await toggle.click();
+    await expect.element(toggle).toHaveAttribute("aria-checked", String(enabled));
+    await act(() =>
+      router.navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: ENVIRONMENT_ID, threadId: thread.id },
+      }),
+    );
+    await expect.element(page.getByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
+  };
+  const editor = page.getByTestId("composer-editor");
+  using write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  await expect.element(page.getByText(`Answer 23 for ${thread.id}.`)).toBeVisible();
+  const modeButton = page.getByRole("button", { name: "Enter Vim normal mode" });
+  await expect.element(modeButton).not.toBeInTheDocument();
+  await toggleVimInSettings(true);
+  await expect.element(modeButton).toBeVisible();
+  await userEvent.click(editor);
+  await userEvent.keyboard("draft");
+  await expect.element(editor).toHaveTextContent("draft");
+  await userEvent.keyboard("{ArrowLeft}");
+  expect(document.getSelection()?.anchorOffset).toBe(4);
+  const cursor = () => vimCursorRange()?.toString();
+  await userEvent.keyboard("{Escape}");
+  await vi.waitFor(() => expect(cursor()).toMatch(/^.$/u));
+  expect(document.getSelection()?.toString()).toBe("");
+  await userEvent.keyboard("gg");
+  await vi.waitFor(() => expect(cursor()).toBe("我"));
+  expect(document.getSelection()?.toString()).toBe("");
+  await userEvent.keyboard("ll");
+  expect(cursor()).toBe("👩🏽‍💻");
+  const clipboard = Promise.withResolvers<void>();
+  write.mockImplementationOnce(() => clipboard.promise);
+  await userEvent.keyboard("vy");
+  expect(write).toHaveBeenCalledWith("👩🏽‍💻");
+  await expect.element(page.getByText("NORMAL", { exact: true })).toBeVisible();
+  clipboard.resolve();
+  expect(cursor()).toBe("👩🏽‍💻");
+  await userEvent.keyboard("vip");
+  expect(document.getSelection()?.toString()).toBe(paragraph);
+  await userEvent.keyboard("y");
+  await vi.waitFor(() => expect(write).toHaveBeenCalledWith(paragraph + "\n"));
+  expect(cursor()).toBe("我");
+  write.mockClear();
+  await userEvent.keyboard("yip");
+  expect(write).toHaveBeenCalledWith(paragraph + "\n");
+  expect(document.getSelection()?.toString()).toBe("");
+  await userEvent.keyboard("jwviw");
+  expect(document.getSelection()?.toString()).toBe("build_step");
+  await userEvent.keyboard("{Escape}yiw");
+  await vi.waitFor(() => expect(write).toHaveBeenCalledWith("build_step"));
+  await userEvent.keyboard("gg");
+  await userEvent.keyboard("vll");
+  expect(document.getSelection()?.toString()).toBe("我的👩🏽‍💻");
+  await userEvent.keyboard("y");
+  await vi.waitFor(() => expect(write).toHaveBeenCalledWith("我的👩🏽‍💻"));
+  await expect.element(page.getByText("NORMAL", { exact: true })).toBeVisible();
+  await userEvent.keyboard("JJ");
+  const nextPrompt = page.getByText("vim-replies: question 1", { exact: true });
+  await expect.element(nextPrompt).toBeInViewport();
+  expect(nextPrompt.element().closest("[data-vim-message]")).toBeTruthy();
+  await userEvent.keyboard("Jvll");
+  expect(document.getSelection()?.toString()).toBe("中文👩🏽‍💻");
+  await userEvent.keyboard("ia");
+  await expect.element(page.getByText("VISUAL", { exact: true })).toBeVisible();
+  expect(document.getSelection()?.toString()).toBe("中文👩🏽‍💻");
+  await act(() =>
+    emitThreadEvent(thread.id, {
+      type: "turn-item.updated",
+      payload: { ...reply, text: reply.text + "续写", streaming: true },
+    }),
+  );
+  await expect.element(page.getByText("第二段续写")).toBeVisible();
+  expect(document.getSelection()?.toString()).toBe("中文👩🏽‍💻");
+  await userEvent.keyboard("{Escape}vip");
+  expect(document.getSelection()?.toString()).toContain("仍在同一段");
+  expect(document.getSelection()?.toString()).not.toContain("第二段");
+  await userEvent.keyboard("y");
+  await vi.waitFor(() => expect(write).toHaveBeenCalledWith("中文👩🏽‍💻测试\n仍在同一段\n"));
+  await userEvent.keyboard("v");
+  await userEvent.keyboard("jjj$");
+  expect(document.getSelection()?.toString()).toContain("第二段");
+  await userEvent.keyboard("{Escape}j");
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-vim-message]")?.textContent).toContain("Answer 2 for"),
+  );
+  await userEvent.keyboard("KK");
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-vim-message]")?.textContent).toBe(
+      "vim-replies: question 1",
+    ),
+  );
+  await userEvent.keyboard("G");
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-vim-message]")?.textContent).toContain("Answer 23 for"),
+  );
+  await userEvent.keyboard("ggvip");
+  await vi.waitFor(() => expect(document.getSelection()?.toString()).toBe(paragraph));
+  const promptBody = document.querySelector("[data-user-message-body][data-vim-message]");
+  expect(promptBody).toHaveAttribute("tabindex", "-1");
+  await userEvent.keyboard("{Escape}i");
+  expect(promptBody).not.toHaveAttribute("tabindex");
+  await expect.element(editor).toHaveFocus();
+  expect(cursor()).toBeUndefined();
+  expect(document.getSelection()?.anchorOffset).toBe(4);
+  await userEvent.keyboard("!");
+  expect(editor.element().textContent).toBe("draf!t");
+  await toggleVimInSettings(false);
+  await expect.element(modeButton).not.toBeInTheDocument();
+  await userEvent.click(editor);
+  await userEvent.keyboard("vjk");
+  expect(editor.element().textContent).toContain("vjk");
+  expect(document.getSelection()?.toString()).toBe("");
+});
+
+it("pages smoothly through a tall Vim reply and extends the Visual selection by a screen", async () => {
+  using _style = installStylesheet();
+  await page.viewport(1100, 700);
+  const thread = threadWithHistory("vim-paging", 2);
+  const longPrompt = Array.from({ length: 36 }, (_, index) => `Prompt paragraph ${index}.`).join(
+    "\n\n",
+  );
+  const reply = assistantItem(
+    thread.id,
+    thread.runs[1]!.id,
+    "vim-paging-assistant-1",
+    3,
+    Array.from({ length: 100 }, (_, index) => {
+      if (index === 98)
+        return `Paragraph 98 wraps across several screens. ${"wrapped text ".repeat(400)}`;
+      if (index === 97) return ["```", "x".repeat(240), "```"].join("\n");
+      return `Paragraph ${index} about keyboard navigation.`;
+    }).join("\n\n"),
+  );
+  using _environment = installFakeEnvironment(
+    [
+      {
+        ...thread,
+        items: thread.items.map((item) => {
+          if (item.id === reply.id) return reply;
+          if (item.type === "user_message" && item.ordinal === 2)
+            return { ...item, text: longPrompt };
+          return item;
+        }),
+      },
+    ],
+    {
+      keybindings: mergeWithDefaultKeybindings(
+        compileResolvedKeybindingsConfig([
+          { key: "ctrl+d", command: "diff.toggle" },
+          { key: "ctrl+f", command: "chat.find" },
+          { key: "ctrl+b", command: "sidebar.toggle" },
+          { key: "ctrl+u", command: "usage.open" },
+        ]),
+      ),
+    },
+  );
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    vimModeEnabled: true,
+    wordWrap: false,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, { router: false });
+  const editor = page.getByTestId("composer-editor");
+  await expect.element(page.getByText("Paragraph 99 about keyboard navigation.")).toBeVisible();
+  await userEvent.click(editor);
+  await userEvent.keyboard("draft{Escape}ggJJ");
+  const promptBody = page
+    .getByText("Prompt paragraph 0.", { exact: true })
+    .element()
+    .closest<HTMLElement>("[data-user-message-body]")!;
+  await vi.waitFor(() => expect(promptBody.dataset.userMessageCollapsed).toBe("true"));
+  await expect.element(page.getByText("Prompt paragraph 0.", { exact: true })).toBeInViewport();
+  await userEvent.keyboard("v");
+  await vi.waitFor(() => expect(promptBody.dataset.userMessageCollapsed).toBe("false"));
+  await userEvent.keyboard("{PageDown}");
+  expect(document.getSelection()?.toString()).toContain("Prompt paragraph 8.");
+  await vi.waitFor(() => {
+    const caret = vimCursorRange()!.getBoundingClientRect();
+    expect(caret.bottom).toBeLessThanOrEqual(
+      editor.element().closest("[data-chat-composer-stack]")!.getBoundingClientRect().top,
+    );
+    expect(caret.top).toBeGreaterThanOrEqual(
+      promptBody.closest(".messages-timeline-scroll")!.getBoundingClientRect().top,
+    );
+  });
+  await userEvent.keyboard("{Escape}J");
+  const source = page.getByText("Paragraph 0 about keyboard navigation.");
+  await expect.element(source).toBeInViewport();
+  const scroll = source.element().closest<HTMLElement>(".messages-timeline-scroll")!;
+  const modeLabel = page.getByText("NORMAL", { exact: true }).element();
+  const modeButton = modeLabel.closest("button")!;
+  await userEvent.hover(modeButton);
+  expect(getComputedStyle(modeButton).textDecorationLine).toBe("none");
+  expect(getComputedStyle(modeButton).outlineStyle).toBe("none");
+  const normalColor = getComputedStyle(modeLabel).color;
+  const start = scroll.scrollTop;
+  const viewport = scroll.getBoundingClientRect();
+  const composerTop = editor
+    .element()
+    .closest("[data-chat-composer-stack]")!
+    .getBoundingClientRect().top;
+  const half = (Math.min(viewport.bottom, composerTop) - viewport.top - 36) / 2;
+  const at = (offset: number) =>
+    vi.waitFor(() => expect(Math.abs(scroll.scrollTop - offset)).toBeLessThan(5));
+  const offsets: number[] = [];
+  const trackScroll = () => offsets.push(scroll.scrollTop);
+  const session = cdp();
+  onTestFinished(async () => {
+    await session.send("Emulation.setEmulatedMedia", { features: [] });
+  });
+  const setMotion = (value: string) =>
+    session.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value }],
+    });
+  await setMotion("no-preference");
+  scroll.addEventListener("scroll", trackScroll);
+  await userEvent.keyboard("{Control>}d{/Control}");
+  await at(start + half);
+  scroll.removeEventListener("scroll", trackScroll);
+  expect(offsets.some((offset) => offset > start + 1 && offset < start + half - 1)).toBe(true);
+  await userEvent.keyboard("{Control>}f{/Control}");
+  await at(start + 3 * half);
+  await userEvent.keyboard("{PageUp}{Control>}u{/Control}");
+  await at(start);
+  await userEvent.keyboard(" {PageDown}{Control>}b{/Control}");
+  await at(start + 2 * half);
+  const pageTop = scroll.scrollTop;
+  await userEvent.keyboard("v");
+  expect(getComputedStyle(page.getByText("VISUAL", { exact: true }).element()).color).not.toBe(
+    normalColor,
+  );
+  expect(getComputedStyle(modeButton).textDecorationLine).toBe("none");
+  for (const key of ["PageDown", "Escape"]) {
+    modeButton.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
+  }
+  const normalCell = vimCursorRange()!.getBoundingClientRect();
+  expect(normalCell.bottom).toBeGreaterThan(viewport.top);
+  expect(normalCell.bottom).toBeLessThanOrEqual(composerTop);
+  await userEvent.keyboard("v");
+  const initial = document.getSelection()!.getRangeAt(0);
+  const top = scroll.getBoundingClientRect().top;
+  expect(initial.getBoundingClientRect().bottom).toBeGreaterThan(top);
+  expect(Math.abs(scroll.scrollTop - pageTop)).toBeLessThan(32);
+  await userEvent.keyboard("{PageDown}");
+  expect(document.getSelection()?.toString()).toMatch(/Paragraph \d+[\s\S]+Paragraph \d+/);
+  await vi.waitFor(() => expect(scroll.scrollTop - start).toBeGreaterThan(3 * half));
+  await userEvent.keyboard("{Control>}b{/Control}");
+  await vi.waitFor(() => expect(Math.abs(scroll.scrollTop - pageTop)).toBeLessThan(32));
+  await userEvent.keyboard("{Escape}");
+  await setMotion("reduce");
+  const from = scroll.scrollTop;
+  offsets.length = 0;
+  scroll.addEventListener("scroll", trackScroll);
+  await userEvent.keyboard("{Control>}d{/Control}");
+  await at(from + half);
+  scroll.removeEventListener("scroll", trackScroll);
+  expect(offsets.some((offset) => offset > from + 1 && offset < from + half - 1)).toBe(false);
+  const jump = async (keys: string, line: string, smooth: boolean) => {
+    const origin = scroll.scrollTop;
+    offsets.length = 0;
+    await userEvent.keyboard(keys);
+    await vi.waitFor(() => {
+      const range = vimCursorRange();
+      expect(range?.startContainer.textContent).toContain(line);
+      const rect = range!.getBoundingClientRect();
+      expect(rect.top).toBeGreaterThanOrEqual(viewport.top);
+      expect(rect.bottom).toBeLessThanOrEqual(composerTop);
+    });
+    const low = Math.min(origin, scroll.scrollTop);
+    const high = Math.max(origin, scroll.scrollTop);
+    expect(high - low).toBeGreaterThan(half);
+    expect(offsets.some((offset) => offset > low + half / 2 && offset < high - half / 2)).toBe(
+      smooth,
+    );
+  };
+  scroll.addEventListener("scroll", trackScroll);
+  await setMotion("no-preference");
+  await jump("gg", "vim-paging: question 0", true);
+  await userEvent.keyboard("G");
+  await vi.waitFor(() => expect(scroll.scrollTop).toBeGreaterThan(2 * viewport.height));
+  await jump("ggvip", "vim-paging: question 0", true);
+  expect(document.getSelection()?.toString()).toBe("vim-paging: question 0");
+  await userEvent.keyboard("{Escape}");
+  await jump("G", "Paragraph 99", true);
+  await jump("k", "Paragraph 98 wraps", true);
+  await jump("j", "Paragraph 99", true);
+  await jump("K", "Prompt paragraph 35.", true);
+  await jump("gg", "vim-paging: question 0", true);
+  await userEvent.keyboard("JJ");
+  await jump("J", "Paragraph 0 about keyboard navigation.", true);
+  await setMotion("reduce");
+  await jump("gg", "vim-paging: question 0", false);
+  await jump("G", "Paragraph 99", false);
+  await setMotion("no-preference");
+  await userEvent.keyboard("kk$");
+  const codeCell = vimCursorRange()!;
+  const code = codeCell.startContainer.parentElement!.closest("pre")!;
+  expect(code.scrollLeft).toBeGreaterThan(0);
+  expect(codeCell.getBoundingClientRect().right).toBeLessThanOrEqual(
+    code.getBoundingClientRect().right + 1,
+  );
+  await setMotion("reduce");
+  await userEvent.keyboard("G");
+  await jump("K", "Prompt paragraph 35.", false);
+  scroll.removeEventListener("scroll", trackScroll);
+  await userEvent.keyboard("i");
+  expect(editor.element().textContent).toBe("draft");
+});
+
+it("keeps intermediate messages visible while Vim scrolls to either end of a long thread", async () => {
+  using _style = installStylesheet();
+  await page.viewport(1100, 700);
+  const thread = threadWithHistory("vim-long-jumps", 100);
+  const lastReply = "End of the long conversation.";
+  const wideLine = `${"0123456789".repeat(30)}Z`;
+  using _environment = installFakeEnvironment([
+    {
+      ...thread,
+      items: thread.items.map((item) => {
+        if (item.type !== "assistant_message") return item;
+        if (item.ordinal === 197) return { ...item, text: ["```", wideLine, "```"].join("\n") };
+        if (item.ordinal === 199) return { ...item, text: lastReply };
+        return item;
+      }),
+    },
+  ]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    vimModeEnabled: true,
+    wordWrap: false,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, { router: false });
+  const last = page.getByText(lastReply);
+  await expect.element(last).toBeVisible();
+  const scroll = last.element().closest<HTMLElement>(".messages-timeline-scroll")!;
+  const viewport = scroll.getBoundingClientRect();
+  const scrollTo = scroll.scrollTo.bind(scroll);
+  using _nativeScroll = vi
+    .spyOn(scroll, "scrollTo")
+    .mockImplementation((x?: ScrollToOptions | number, y?: number) => {
+      if (typeof x === "number") return scrollTo(x, y ?? 0);
+      if (
+        x?.behavior === "smooth" &&
+        Math.abs((x.top ?? scroll.scrollTop) - scroll.scrollTop) > 2 * viewport.height
+      )
+        return scrollTo({ ...x, behavior: "instant" });
+      return scrollTo(x);
+    });
+  const editor = page.getByTestId("composer-editor");
+  const composer = editor.element().closest("[data-chat-composer-stack]")!;
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Escape}");
+  for (const [key, end] of [
+    ["gg", "vim-long-jumps: question 0"],
+    ["G", lastReply],
+  ] as const) {
+    const positions: number[] = [];
+    const visibleRows = new Set<string>();
+    const record = () => {
+      positions.push(scroll.scrollTop);
+      const row = document
+        .elementFromPoint(viewport.left + viewport.width / 2, viewport.top + viewport.height / 2)
+        ?.closest<HTMLElement>("[data-timeline-row-id]");
+      if (row?.dataset.timelineRowId) visibleRows.add(row.dataset.timelineRowId);
+    };
+    record();
+    scroll.addEventListener("scroll", record);
+    try {
+      await userEvent.keyboard(key);
+      await vi.waitFor(
+        () => {
+          const caret = vimCursorRange();
+          expect(caret?.startContainer.textContent).toBe(end);
+          const rect = caret!.getBoundingClientRect();
+          expect(rect.height).toBeGreaterThan(0);
+          expect(rect.top).toBeGreaterThanOrEqual(viewport.top);
+          expect(rect.bottom).toBeLessThanOrEqual(composer.getBoundingClientRect().top);
+        },
+        { timeout: 5000 },
+      );
+      record();
+    } finally {
+      scroll.removeEventListener("scroll", record);
+    }
+    const distance = Math.abs(positions.at(-1)! - positions[0]!);
+    const maxStep = Math.max(
+      ...positions.slice(1).map((top, index) => Math.abs(top - positions[index]!)),
+    );
+    expect(distance).toBeGreaterThan(10 * viewport.height);
+    expect(maxStep / distance).toBeLessThan(0.4);
+    expect(visibleRows.size).toBeGreaterThan(3);
+    if (key === "gg") {
+      const follow = page.getByRole("button", { name: "Scroll to end" });
+      await expect.element(follow).toBeVisible();
+      using _frames = fakeTimers();
+      follow.element().closest("button")!.click();
+      scroll.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+      await act(() => vi.advanceTimersToNextFrame());
+      expect(scroll.scrollTop).toBeLessThan(viewport.height);
+    }
+  }
+  const line = page.getByText(wideLine, { exact: true });
+  await userEvent.keyboard("KK");
+  await expect.element(line).toBeInViewport();
+  await userEvent.keyboard("$");
+  const originalBlock = line.element().closest("pre")!;
+  expect(originalBlock.scrollLeft).toBeGreaterThan(0);
+  const cell = vimCursorRange()!;
+  expect(cell.toString()).toBe("Z");
+  const returnTop = Math.round(
+    scroll.scrollTop + cell.getBoundingClientRect().top - viewport.bottom - 24,
+  );
+  scroll.scrollTop = 0;
+  await expect.element(line).not.toBeInTheDocument();
+  scroll.scrollTop = returnTop;
+  await vi.waitFor(() => {
+    const block = line.element().closest("pre")!;
+    const restored = vimCursorRange()!;
+    expect(block).not.toBe(originalBlock);
+    expect(block.contains(restored.startContainer)).toBe(true);
+    expect(restored.toString()).toBe("Z");
+    const rect = restored.getBoundingClientRect();
+    const bounds = block.getBoundingClientRect();
+    expect(rect.left).toBeGreaterThanOrEqual(bounds.left - 1);
+    expect(rect.right).toBeLessThanOrEqual(bounds.right + 1);
+    expect(rect.top).toBeGreaterThan(viewport.bottom);
+    expect(scroll.scrollTop).toBe(returnTop);
+  });
+  for (const shiftKey of [false, true]) {
+    await userEvent.keyboard("f");
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.activeElement!.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(false);
+  }
+});
+
+it("lands inside the taller cell when paging through a Markdown table", async () => {
+  await using screen = await render(
+    <table style={{ whiteSpace: "pre", lineHeight: "24px" }}>
+      <tbody>
+        <tr style={{ verticalAlign: "top" }}>
+          <td>{"first\nsecond\nthird"}</td>
+          <td>short</td>
+        </tr>
+        <tr>
+          <td>next row</td>
+        </tr>
+      </tbody>
+    </table>,
+  );
+  const reader = openVimMessageText(screen.container);
+  try {
+    reader.moveToScreenY(screen.getByText("short").element().getBoundingClientRect().top + 36);
+    expect(reader.paint(false)?.toString()).toBe("s");
+  } finally {
+    reader.close();
+  }
 });

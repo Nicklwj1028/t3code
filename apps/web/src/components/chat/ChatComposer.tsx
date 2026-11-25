@@ -316,7 +316,7 @@ function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
 
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
-  focusAt: (cursor: number) => void;
+  focusAt: (cursor: number, expandedCursor?: number) => void;
   addDroppedFiles: (files: File[]) => void;
   addDroppedFolders: (folders: File[]) => void;
   hasPendingAttachments: () => boolean;
@@ -337,7 +337,7 @@ export interface ChatComposerHandle {
   isModelPickerOpen: () => boolean;
   isCaretAtStart: () => boolean;
   compactContext: () => void;
-  readSnapshot: () => {
+  readSnapshot: (selectionSource?: "dom") => {
     value: string;
     cursor: number;
     expandedCursor: number;
@@ -514,6 +514,7 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
 
   focusComposer: () => void;
+  enterVimNormalModeRef?: React.RefObject<((event: KeyboardEvent) => boolean) | null>;
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
@@ -605,6 +606,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     getModelDisabledReason,
     handleRuntimeModeChange,
     focusComposer,
+    enterVimNormalModeRef,
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
@@ -1937,13 +1939,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const applyPromptReplacementStable = useStableCallback(applyPromptReplacement);
 
-  const readComposerSnapshot = (): {
+  const readComposerSnapshot = (
+    selectionSource?: "dom",
+  ): {
     value: string;
     cursor: number;
     expandedCursor: number;
     contextIds: string[];
   } => {
-    const editorSnapshot = composerEditorRef.current?.readSnapshot();
+    const editorSnapshot = composerEditorRef.current?.readSnapshot(selectionSource);
     if (editorSnapshot) {
       return editorSnapshot;
     }
@@ -2521,7 +2525,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onCompactContext();
   };
   const compactThreadContextStable = useStableCallback(compactThreadContext);
-  const expandMobileComposer = () => {
+  const expandAndFocusMobileEditor = (focusEditor: () => void) => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
       composerBlurFrameRef.current = null;
@@ -2536,14 +2540,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsComposerFocused(true);
     mobileComposerExpandFrameRef.current = window.requestAnimationFrame(() => {
       mobileComposerExpandFrameRef.current = null;
-      composerEditorRef.current?.focusAtEnd();
+      focusEditor();
       mobileComposerExpandReleaseFrameRef.current = window.requestAnimationFrame(() => {
         mobileComposerExpandReleaseFrameRef.current = null;
         mobileComposerExpandInFlightRef.current = false;
       });
     });
   };
+  const expandMobileComposer = () =>
+    expandAndFocusMobileEditor(() => composerEditorRef.current?.focusAtEnd());
   const expandMobileComposerStable = useStableCallback(expandMobileComposer);
+  const focusEditorAt = useStableCallback((cursor: number, expandedCursor?: number) => {
+    const focus = () => composerEditorRef.current?.focusAt(cursor, expandedCursor);
+    if (isComposerCollapsedMobile) expandAndFocusMobileEditor(focus);
+    else focus();
+  });
 
   // Escape dismisses the suggestion so Tab moves focus again.
   const { suggestion: promptSuggestion, dismiss: dismissPromptSuggestion } = usePromptSuggestion(
@@ -2572,7 +2583,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       cancelHeldSend();
       return true;
     }
-    return composerCommandKeyHandler({
+    const handled = composerCommandKeyHandler({
       keybindings,
       getShortcutContext,
       sendShortcut: settings.sendShortcut,
@@ -2611,6 +2622,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptSuggestion: offeredPromptSuggestion,
       dismissPromptSuggestion,
     })(key, event, isTaskItem);
+    return handled || (key === "Escape" && enterVimNormalModeRef?.current?.(event) === true);
   };
 
   const {
@@ -3308,9 +3320,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
-      focusAt: (cursor: number) => {
-        composerEditorRef.current?.focusAt(cursor);
-      },
+      focusAt: focusEditorAt,
       addDroppedFiles: (files: File[]) => {
         void addComposerAttachments(files).then((inserted) => {
           if (!inserted) focusComposer();
@@ -3415,9 +3425,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const range = composerEditorRef.current?.readSelectionRange();
         return range !== undefined && range.start === 0 && range.end === 0;
       },
-      readSnapshot: () => {
-        return readComposerSnapshotStable();
-      },
+      readSnapshot: readComposerSnapshotStable,
       resetCursorState: (options?: {
         cursor?: number;
         prompt?: string;
@@ -3553,6 +3561,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerThreadContexts,
       composerEnvironmentContexts,
       focusComposer,
+      focusEditorAt,
       environmentId,
       primaryEnvironmentId,
       isLiteralPendingAnswer,
