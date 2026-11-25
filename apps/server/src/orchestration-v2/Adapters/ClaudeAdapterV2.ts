@@ -4867,6 +4867,7 @@ export function claudeMcpElicitationAcceptance(
   const response = toMcpElicitationResponse(
     { mode: "form", requestedSchema: withoutSchemaDefaults(request.requestedSchema) },
     "accept",
+    { acceptConfirmationChoices: true },
   );
   // The helper leaves content out when the schema is not a form it can read.
   const filled = response.content;
