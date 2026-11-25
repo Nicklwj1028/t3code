@@ -28,6 +28,7 @@ import {
 } from "./PullRequestListRow";
 import { PullRequestPrivateMark } from "./PullRequestDetailLayout";
 import { PullRequestLabelChip, PullRequestReviewDecisionGlyph } from "./pullRequestPresentation";
+import { textDirection } from "~/textDirection";
 
 const LABEL_SLOTS = [
   { overflow: "@xl/pr-row-meta:hidden" },
@@ -161,7 +162,7 @@ function PullRequestRowImpl({
               #{entry.number}
             </span>
           }
-          title={entry.title}
+          title={<span dir={textDirection(entry.title)}>{entry.title}</span>}
           signals={
             <>
               {entry.visibility === "private" ? (
