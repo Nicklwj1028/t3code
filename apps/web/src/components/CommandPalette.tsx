@@ -471,14 +471,10 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
-  // A pushed view drops the typed highlight until the user moves it again.
+  // Views without auto-highlight wait for the user to move the highlight after a reset.
   const highlightClearedRef = useRef(viewStack.length > 0);
   // Entering or leaving browse mode remounts the input; carry the caret across it.
   const remountSelectionRef = useRef<PendingInputSelection | null>(null);
-  function clearTypedHighlight(): void {
-    highlightClearedRef.current = true;
-    setHighlightedItemValue(null);
-  }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
@@ -1013,14 +1009,19 @@ function OpenCommandPaletteDialog(props: {
 
   function handleQueryChange(nextQuery: string, source: EventTarget | null): void {
     browseNavigation.invalidate();
-    clearTypedHighlight();
     const resolvedQuery = canBrowsePaths ? resolvePastedPath(query, nextQuery) : nextQuery;
+    const nextIsBrowsing =
+      canBrowsePaths && isFilesystemBrowseQuery(resolvedQuery, browseEnvironmentPlatform);
+    // Base UI owns the highlight in auto-highlight views, including on replacement input.
+    if (!autoHighlightsFirstRow || nextIsBrowsing) {
+      highlightClearedRef.current = true;
+      setHighlightedItemValue(null);
+    }
     // A rewritten paste has no matching offsets, so its caret lands at the end.
     if (
       source instanceof HTMLInputElement &&
       resolvedQuery === nextQuery &&
-      (canBrowsePaths && isFilesystemBrowseQuery(resolvedQuery, browseEnvironmentPlatform)) !==
-        isBrowsing
+      nextIsBrowsing !== isBrowsing
     ) {
       remountSelectionRef.current = {
         value: resolvedQuery,
@@ -2605,6 +2606,8 @@ function OpenCommandPaletteDialog(props: {
   const resultRows = buildCommandPaletteRows(displayedGroups);
   const autoHighlightsFirstRow =
     !isBrowsing && !isRemoteProjectCloneFlow && newProjectFlow === null;
+  const activeItemValue =
+    highlightedItemValue ?? (autoHighlightsFirstRow ? (resultRows.itemValues[0] ?? null) : null);
 
   const inputPlaceholder =
     newProjectFlow !== null
@@ -2703,11 +2706,7 @@ function OpenCommandPaletteDialog(props: {
       context: { modelPickerOpen: false, editableFocus: true },
     });
     if (command === "thread.pin") {
-      const highlightedItem = findHighlightedCommandPaletteItem(
-        displayedGroups,
-        highlightedItemValue ??
-          (autoHighlightsFirstRow ? (resultRows.itemValues[0] ?? null) : null),
-      );
+      const highlightedItem = findHighlightedCommandPaletteItem(displayedGroups, activeItemValue);
       if (highlightedItem?.kind === "action" && highlightedItem.pin) {
         event.preventDefault();
         event.stopPropagation();
@@ -2835,31 +2834,9 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const firstItemValue = autoHighlightsFirstRow ? resultRows.itemValues[0] : undefined;
-    if (
-      event.key === "ArrowDown" &&
-      highlightClearedRef.current &&
-      firstItemValue &&
-      !event.nativeEvent.isComposing
-    ) {
-      (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-      event.preventDefault();
-      highlightClearedRef.current = false;
-      setHighlightedItemValue(firstItemValue);
-      scrollCommandPaletteRowIntoView(
-        resultListRef.current,
-        resultRows.rowIndexByItemIndex[0] ?? 0,
-        true,
-      );
-      return;
-    }
-
     // Virtualization may unmount the highlighted row; handle Enter directly instead of Base UI's click.
     if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-      const highlightedItem = findHighlightedCommandPaletteItem(
-        displayedGroups,
-        highlightedItemValue ?? firstItemValue ?? null,
-      );
+      const highlightedItem = findHighlightedCommandPaletteItem(displayedGroups, activeItemValue);
       if (highlightedItem) {
         (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
         event.preventDefault();
@@ -3148,7 +3125,13 @@ function OpenCommandPaletteDialog(props: {
       items={resultRows.itemValues}
       virtualized
       onItemHighlighted={(value, eventDetails) => {
-        if (eventDetails.reason === "none" && highlightClearedRef.current) return;
+        if (
+          !autoHighlightsFirstRow &&
+          eventDetails.reason === "none" &&
+          highlightClearedRef.current
+        ) {
+          return;
+        }
         highlightClearedRef.current = false;
         setHighlightedItemValue(typeof value === "string" ? value : null);
         const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
@@ -3194,7 +3177,7 @@ function OpenCommandPaletteDialog(props: {
       <CommandPaletteVirtualizedResults
         rows={resultRows.rows}
         listRef={resultListRef}
-        highlightedItemValue={highlightedItemValue}
+        highlightedItemValue={activeItemValue}
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}
         onExecuteItem={executeItem}
