@@ -28,7 +28,9 @@ to a picker has the chosen model answer a tiny prompt, which proves the key work
 list their models without checking it. **Show models** in the generator's menu lists its models
 and refreshes the list after the service adds some.
 
-Each request sends the API what the task needs, such as the staged diff for a commit message.
+Each request sends the API what the task needs, such as the staged diff for a commit message. A
+request is given up on after two minutes by default; raise the generator's **Request timeout** when
+a model you run yourself needs longer to answer.
 
 Turning a generator off or removing it sends its work back to the environment's text generation
 model.
