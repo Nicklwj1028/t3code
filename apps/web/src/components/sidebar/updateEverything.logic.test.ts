@@ -10,6 +10,7 @@ import {
   describeUpdateEverything,
   resolveRestoredRetry,
   runUpdateEverything,
+  selectUpdateMachines,
   type UpdateEverythingMachine,
   type UpdateRunMachine,
 } from "./updateEverything.logic";
@@ -475,6 +476,16 @@ describe("describeUpdateEverything", () => {
     });
 
     expect(
+      describeUpdateEverything({
+        localVersion: null,
+        localMachines: [{ environmentId: id("local"), label: "Mainbook" }],
+        servers: [],
+        providerMachines: [{ environmentId: id("local"), label: "Mainbook", providers: ["Codex"] }],
+        skipped: [],
+      }).rows[0],
+    ).toMatchObject({ app: null, hostedByThisApp: true });
+
+    expect(
       rows.map(({ label, app, skipped, providers }) => [label, app, skipped, providers]),
     ).toEqual([
       ["Mainbook", "this-app", null, ["Codex"]],
@@ -514,6 +525,16 @@ describe("describeUpdateCapsule", () => {
     expect(describeUpdateCapsule({ ...run, trackSwitch: true }, [failed], null, 0).action).toBe(
       "dismiss",
     );
+  });
+});
+
+describe("selectUpdateMachines", () => {
+  it("updates only selected machines and preserves the update-all default", () => {
+    const pc = { environmentId: EnvironmentId.make("pc") };
+    const laptop = { environmentId: EnvironmentId.make("laptop") };
+    expect(selectUpdateMachines([pc, laptop], [laptop.environmentId])).toEqual([laptop]);
+    expect(selectUpdateMachines([pc, laptop], [])).toEqual([]);
+    expect(selectUpdateMachines([pc, laptop])).toEqual([pc, laptop]);
   });
 });
 
