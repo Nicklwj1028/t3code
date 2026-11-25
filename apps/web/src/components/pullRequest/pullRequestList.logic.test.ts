@@ -102,7 +102,7 @@ describe("visible pull request line-count targets", () => {
     );
     expect([...keys]).toEqual([secondKey]);
     expect(pullRequestStatsBatches(entriesByKey, keys)[0]?.input.refs).toEqual([
-      { projectId: "project-1", repository: "pingdotgg/t3code", number: 2 },
+      { projectId: "project-1", host: "github.com", repository: "pingdotgg/t3code", number: 2 },
     ]);
   });
 
@@ -984,6 +984,32 @@ describe("filter picker choices", () => {
     expect(choices).toEqual([
       { name: "size:XL", color: "d93f0b", count: 7 },
       { name: "bug", color: null, count: 0 },
+    ]);
+  });
+
+  it("keeps host-qualified listed repositories distinct across hosts when merging lists", () => {
+    const merged = mergePullRequestLists([
+      [
+        ENV_1,
+        {
+          viewers: {},
+          providers: [],
+          repositories: [
+            { host: "github.com", repository: "acme/api" },
+            { host: "gitlab.com", repository: "acme/api" },
+            { host: "GITHUB.COM", repository: "Acme/Api" },
+          ],
+          entries: [],
+          errors: [],
+          truncated: false,
+          nextCursors: {},
+        },
+      ],
+    ]);
+
+    expect(merged?.repositories).toEqual([
+      { host: "github.com", repository: "acme/api" },
+      { host: "gitlab.com", repository: "acme/api" },
     ]);
   });
 });

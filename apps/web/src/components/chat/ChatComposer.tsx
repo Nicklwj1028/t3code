@@ -448,6 +448,7 @@ export interface ChatComposerProps {
   gitCwd: string | null;
   pullRequestProjectId: ProjectId | null;
   pullRequestRepository: string | null;
+  pullRequestHasTrackedFolders: boolean;
   threadPullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined;
   onComposerOverlayHeightChange: (height: number) => void;
   /** The new-thread strip names the permissions, so the controls row hides its chip. */
@@ -580,6 +581,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     gitCwd,
     pullRequestProjectId,
     pullRequestRepository,
+    pullRequestHasTrackedFolders,
     threadPullRequests,
     onComposerOverlayHeightChange,
     promptRef,
@@ -1230,6 +1232,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     pullRequestProjectId,
     pullRequestRepository,
+    pullRequestHasTrackedFolders,
     threadPullRequests,
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,

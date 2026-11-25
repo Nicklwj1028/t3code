@@ -6,6 +6,7 @@ import type {
   EnvironmentId,
   PullRequestListEntry,
   PullRequestListProjectError,
+  PullRequestListRepository,
   PullRequestListResult,
   ProjectId,
   RepositoryIdentity,
@@ -308,6 +309,7 @@ export interface PullRequestStatsTarget {
   readonly input: {
     readonly refs: ReadonlyArray<{
       readonly projectId: ProjectId;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }>;
@@ -367,6 +369,7 @@ export function pullRequestStatsBatches(
       key,
       ref: {
         projectId: entry.projectId,
+        host: entry.host,
         repository: entry.repository,
         number: entry.number,
       },
@@ -525,6 +528,7 @@ export const pullRequestDiffStatKey = (row: {
 export interface MergedPullRequestList {
   readonly viewers: PullRequestViewers;
   readonly providers: PullRequestListResult["providers"];
+  readonly repositories: ReadonlyArray<PullRequestListRepository>;
   readonly entries: ReadonlyArray<EnvironmentPullRequestEntry>;
   readonly errors: ReadonlyArray<EnvironmentPullRequestError>;
   readonly truncated: boolean;
@@ -539,6 +543,7 @@ export function mergePullRequestLists(
   const viewers: Record<string, string> = {};
   const truncatedEnvironments = new Set<string>();
   const providers = new Map<string, PullRequestListResult["providers"][number]>();
+  const repositories = new Map<string, PullRequestListRepository>();
   const entries = new Map<string, EnvironmentPullRequestEntry>();
   const errors: EnvironmentPullRequestError[] = [];
   const nextCursors: Record<string, PullRequestListCursors> = {};
@@ -561,6 +566,14 @@ export function mergePullRequestLists(
             },
       );
     }
+    for (const item of answer.repositories ?? []) {
+      const host = item.host.trim();
+      const repository = item.repository.trim();
+      const key = `${host.toLowerCase()}\0${repository.toLowerCase()}`;
+      if (host.length > 0 && repository.length > 0 && !repositories.has(key)) {
+        repositories.set(key, { host, repository });
+      }
+    }
     for (const entry of answer.entries) {
       const held = entries.get(entry.url);
       // The first environment to answer keeps a pull request that several of them read.
@@ -581,6 +594,7 @@ export function mergePullRequestLists(
   return {
     viewers,
     providers: [...providers.values()],
+    repositories: [...repositories.values()],
     entries: [...entries.values()].toSorted(comparePullRequestsByRecency),
     errors,
     truncated,
