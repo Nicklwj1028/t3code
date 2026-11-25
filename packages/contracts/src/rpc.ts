@@ -402,6 +402,7 @@ import {
 import {
   HostResourcesSnapshot,
   ResourceTelemetryHistory,
+  ResourceTelemetryHistoryError,
   ResourceTelemetryHistoryInput,
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
@@ -1140,7 +1141,7 @@ const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, 
 const WsServerGetProcessResourceHistoryRpc = Rpc.make(WS_METHODS.serverGetProcessResourceHistory, {
   payload: ServerProcessResourceHistoryInput,
   success: ServerProcessResourceHistoryResult,
-  error: EnvironmentAuthorizationError,
+  error: Schema.Union([EnvironmentAuthorizationError, ResourceTelemetryHistoryError]),
 });
 
 const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
@@ -1148,7 +1149,7 @@ const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
   {
     payload: ResourceTelemetryHistoryInput,
     success: ResourceTelemetryHistory,
-    error: EnvironmentAuthorizationError,
+    error: Schema.Union([EnvironmentAuthorizationError, ResourceTelemetryHistoryError]),
   },
 );
 
