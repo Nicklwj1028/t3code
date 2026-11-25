@@ -49,6 +49,12 @@ Use absolute paths or `~/` paths in the account's environment settings; relative
 depend on each project's working directory and cannot be reliably discovered by Usage. Accounts
 sharing a history directory count once.
 
+Providers also pick up session directories that a CLIProxyAPI deployment moved inside its data
+directory: `~/.cli-proxy-api`, or a different root named by `CLIPROXY_API_AUTH_DIR`,
+`CLIPROXY_AUTH_DIR`, or `CLIPROXY_HOME` in the account's environment or the server's environment.
+Any `projects`, `sessions`, or `conversations` directory found under those roots is scanned like a
+native history directory, as long as it still holds files in the provider's own format.
+
 The server saves its first hostname in `<T3 home>/usage-host-id`, so a recreated container keeps
 its usage identity when T3 home is persisted. Set `T3CODE_HOST_ID` to choose the identity
 explicitly.
