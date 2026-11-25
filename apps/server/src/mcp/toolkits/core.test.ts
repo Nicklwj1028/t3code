@@ -1,4 +1,5 @@
 import * as AssetSigner from "../../assets/AssetSigner.ts";
+import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -28,6 +29,8 @@ import * as DateTime from "effect/DateTime";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -384,14 +387,49 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
       expect(yield* byPath(name, scope), name).toContain("only full-access threads");
       expect(yield* byPath(name, fullAccess), name).toContain("not a readable HTML document");
     }
+    // Inlining a local image is a file read too, so it follows the same rule.
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig;
+    const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-html-img-" });
+    const image = path.join(directory, "secret.svg");
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>SECRET</text></svg>';
+    yield* fileSystem.writeFileString(image, svg);
+    const renderedImage = (caller: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({
+          name: "html_render",
+          arguments: { html: `<img src="${image}">`, title: "Image", height: 240 },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+          Effect.provideService(McpSchema.McpServerClient, client),
+          Effect.flatMap((result) => {
+            const attachmentId = htmlRenderFromToolItem({
+              toolName: "t3-code.html_render",
+              output: result.structuredContent,
+            })?.attachmentId;
+            const stored =
+              attachmentId &&
+              resolveAttachmentPathById({ attachmentsDir: config.attachmentsDir, attachmentId });
+            return fileSystem.readFileString(stored || "/t3-missing-attachment");
+          }),
+        );
+    const dataUri = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+    const cappedFullAccess = { ...fullAccess, runtimeModeCeiling: "approval-required" as const };
+    expect(yield* renderedImage(scope)).not.toContain(dataUri);
+    expect(yield* renderedImage(cappedFullAccess)).not.toContain(dataUri);
+    expect(yield* renderedImage(fullAccess)).toContain(dataUri);
   }).pipe(
     Effect.provide(
       McpHttpServer.layerHtmlToolkit.pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(McpProviderSessions.layer),
         Layer.provide(PreviewBrowser.layer),
-        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-html-render-" })),
-        Layer.provide(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-html-render-" }),
+        ),
+        Layer.provideMerge(
           DocumentText.layer.pipe(
             Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),

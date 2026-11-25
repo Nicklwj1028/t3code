@@ -186,6 +186,34 @@ describe("HtmlRender", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect(
+    "refuses internal server paths and non-image size probes when inlining local images",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig;
+        const htmlRender = yield* HtmlRender.HtmlRender;
+        const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-guard-" });
+        const internalSvg = path.join(config.secretsDir, "secret.svg");
+        yield* fileSystem.makeDirectory(config.secretsDir, { recursive: true });
+        yield* fileSystem.writeFileString(internalSvg, "<svg><text>INTERNAL</text></svg>");
+        const hugeNonImage = path.join(directory, "not-an-image.png");
+        yield* fileSystem.writeFileString(hugeNonImage, "NOT_A_PNG");
+        yield* fileSystem.truncate(hugeNonImage, 11 * 1024 * 1024);
+
+        const error = yield* htmlRender
+          .prepare(`<img src="${internalSvg}"><img src="${hugeNonImage}">`)
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(HtmlRender.HtmlRenderImagesNotFoundError);
+        expect(error._tag === "HtmlRenderImagesNotFoundError" && error.paths).toEqual([
+          internalSvg,
+          hugeNonImage,
+        ]);
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("publishes the prepared page as an html thread attachment", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
