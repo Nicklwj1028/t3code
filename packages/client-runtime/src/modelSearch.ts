@@ -69,7 +69,8 @@ export function scoreModelPickerSearch(
   const normalizedQuery = tokens.join(" ");
   if (
     normalizedQuery === normalizeModelName(model.name) ||
-    normalizedQuery === normalizeModelName(model.shortName ?? "")
+    normalizedQuery === normalizeModelName(model.shortName ?? "") ||
+    normalizedQuery === normalizeModelName(model.slug ?? "")
   ) {
     return MODEL_PICKER_EXACT_NAME_SCORE;
   }
