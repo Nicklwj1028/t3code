@@ -191,6 +191,9 @@ import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { ThreadPullIndicator, useThreadPullNewThread } from "./ThreadPullNewThread";
+import { overscrollPastEnd } from "./thread-pull-new-thread";
+import { T3ScrollPull } from "../../native/T3ScrollPull";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { splitMarkdownDetails } from "../../lib/markdownDetails";
 import { markdownReferenceDefinitions, withReferenceDefinitions } from "../../lib/markdownDocument";
@@ -419,6 +422,7 @@ export interface ThreadFeedProps {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   readonly onCiteAssistantText?: (citation: AssistantCitation) => void;
+  readonly canPullNewThread?: boolean;
 }
 
 const USER_MESSAGE_COPY_MENU_ACTIONS = [
@@ -3212,6 +3216,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // Without the native contentInset, a list-header spacer clears the bar the column lays content under.
   const topContentInset = usesNativeAutomaticInsets ? 0 : columnTopInset;
   const anchorTopInset = usesNativeAutomaticInsets ? barInset : topContentInset;
+  // The header resizes as the feed scrolls, and UIKit stops a bounce when the inset changes, so
+  // the top inset holds while the feed is pulled past its end.
+  const [heldTopInset, setHeldTopInset] = useState<number | null>(null);
 
   const theme = useUniwindTheme();
   const iconSubtleColor = theme["--color-icon-subtle"];
@@ -3782,6 +3789,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   };
   const handleMetricsChange = () => reportMetrics(loadedListKey === feedThreadKey);
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (usesNativeAutomaticInsets) {
+      const pastEnd = overscrollPastEnd(event.nativeEvent) > 0;
+      if (pastEnd !== (heldTopInset !== null)) setHeldTopInset(pastEnd ? anchorTopInset : null);
+    }
     reportHeaderMaterialVisibility(
       event.nativeEvent.contentOffset.y + (usesNativeAutomaticInsets ? barInset : 0) > 6,
     );
@@ -3810,6 +3821,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
     [],
   );
+  const {
+    scrollRef: pullScrollRef,
+    stretchEvents: pullStretchEvents,
+    pull,
+  } = useThreadPullNewThread(props.canPullNewThread ?? false);
   const [workGroupScrollPositions] = useState(
     () => new Map<string, ThreadWorkGroupScrollPosition>(),
   );
@@ -4291,13 +4307,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         {/* In a split, rows only re-wrap in the render that hands the list its new width. A native
             column resize would re-wrap them first, and the list would place the taller or shorter
             rows at their old offsets until their measurements came back. */}
-        <View
-          className="flex-1"
-          style={splitLayout && viewportWidth > 0 ? { width: viewportWidth } : undefined}
+        <T3ScrollPull
+          style={splitLayout && viewportWidth > 0 ? { flex: 1, width: viewportWidth } : { flex: 1 }}
+          onPull={pullStretchEvents}
         >
           {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined. */}
           <KeyboardAwareLegendList
             ref={attachList}
+            refScrollView={pullScrollRef}
             dataKey={feedThreadKey}
             style={settling ? { flex: 1, opacity: 0 } : { flex: 1 }}
             // RN 0.81+ drops inset-area touches (facebook/react-native#54123), making blank post-send space unscrollable.
@@ -4309,7 +4326,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={props.contentInsetEndAdjustment}
             keyboardOffset={props.keyboardOffset}
-            {...(usesNativeAutomaticInsets ? { contentInset: { top: anchorTopInset } } : {})}
+            {...(usesNativeAutomaticInsets
+              ? { contentInset: { top: heldTopInset ?? anchorTopInset } }
+              : {})}
             freeze={props.freeze}
             maintainScrollAtEnd={jumpReady ? false : THREAD_FEED_MAINTAIN_SCROLL_AT_END}
             maintainScrollAtEndThreshold={THREAD_FEED_MAINTAIN_SCROLL_AT_END_THRESHOLD}
@@ -4405,7 +4424,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               paddingRight: contentHorizontalPadding + contentRightInset,
             }}
           />
-        </View>
+        </T3ScrollPull>
         {presentedFeed.length === 0 &&
         !props.worktreeSetup &&
         props.activeWorkStartedAt === null &&
@@ -4424,6 +4443,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               horizontalPadding={horizontalPadding}
             />
           </View>
+        ) : null}
+        {pull ? (
+          <ThreadPullIndicator
+            pull={pull}
+            bottom={bottomContentInset + 12}
+            screenColor={screenColor}
+          />
         ) : null}
         <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
         {setupDetailsOpen && props.worktreeSetup ? (
