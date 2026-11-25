@@ -169,6 +169,7 @@ export interface Preferences {
   /** The client `language` setting: a locale code or "system". Unset means English. */
   readonly language?: string;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
+  readonly deviceVoiceModelId?: string | null;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly toolCallVisibility?: ToolCallVisibility;
@@ -263,6 +264,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     followUpBehavior?: FollowUpBehavior;
     language?: string;
     microphones?: ReadonlyArray<MicrophoneEntry>;
+    deviceVoiceModelId?: string | null;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     toolCallVisibility?: ToolCallVisibility;
@@ -391,6 +393,11 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.followUpBehavior = parsed.followUpBehavior;
   }
   if (typeof parsed.language === "string") preferences.language = parsed.language;
+  if (typeof parsed.deviceVoiceModelId === "string" || parsed.deviceVoiceModelId === null) {
+    preferences.deviceVoiceModelId = parsed.deviceVoiceModelId;
+  } else if ("deviceVoiceEngine" in parsed && parsed.deviceVoiceEngine === "parakeet-ultra") {
+    preferences.deviceVoiceModelId = "handy-computer/parakeet-ultra-gguf";
+  }
   if (Array.isArray(parsed.microphones)) {
     preferences.microphones = parsed.microphones.flatMap((entry): MicrophoneEntry[] => {
       if (typeof entry !== "object" || entry === null || !isMicrophoneKind(entry.kind)) return [];
