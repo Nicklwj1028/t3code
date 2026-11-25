@@ -1843,6 +1843,7 @@ export const ServerSettingsPatch = Schema.Struct({
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),
+  reorderModelFavorites: Schema.optionalKey(ModelFavorites),
   setModelsHidden: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, hidden: Schema.Boolean })),
   ),
