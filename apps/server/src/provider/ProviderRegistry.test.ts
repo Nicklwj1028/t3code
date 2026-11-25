@@ -2008,7 +2008,7 @@ it.layer(
       } satisfies ServerProvider;
       const pendingProvider = {
         ...cachedProvider,
-        status: "warning",
+        status: "checking",
         installed: false,
         auth: { status: "unknown" },
         models: [customModel],
@@ -4458,7 +4458,7 @@ it.layer(
 
           const pendingRebuild = yield* Stream.toPull(
             codexSnapshots.pipe(
-              Stream.filter((provider) => provider.status === "warning" && !provider.installed),
+              Stream.filter((provider) => provider.status === "checking" && !provider.installed),
             ),
           );
           yield* serverSettings.updateSettings({
