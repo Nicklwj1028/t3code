@@ -78,6 +78,7 @@ import {
   chooseTranscriptCleanup,
   useCleanupGrant,
 } from "../../speech/voiceConsent";
+import { isElectron } from "../../env";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { runEnvironmentSpeech } from "../../speech/runEnvironmentSpeech";
 import {
@@ -219,6 +220,27 @@ function ModelBadge(props: { icon: ReactNode; label: string; tooltip: string }) 
       </TooltipTrigger>
       <TooltipPopup side="top">{props.tooltip}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+// The scope picker above only changes serverScoped rows, so rows saved on this client say so.
+// Not "This device": that names the primary environment elsewhere, and web saves per browser.
+function ClientSettingTitle(props: { children: string }) {
+  const gt = useGT();
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {props.children}
+      <Tooltip>
+        <TooltipTrigger render={<Badge variant="outline" size="sm" tabIndex={0} />}>
+          {isElectron ? gt("This app") : gt("This browser")}
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {isElectron
+            ? gt("Saved in this app, whatever scope is selected above.")
+            : gt("Saved in this browser, whatever scope is selected above.")}
+        </TooltipPopup>
+      </Tooltip>
+    </span>
   );
 }
 
@@ -814,7 +836,7 @@ function AdvancedSpeechSettings({
     <AdvancedSettings targetIds={[setting("speech-streaming").id, setting("speech-hardware").id]}>
       <SettingsRow
         {...setting("speech-streaming")}
-        title={gt("Streaming transcription")}
+        title={<ClientSettingTitle>{gt("Streaming transcription")}</ClientSettingTitle>}
         description={
           supported.supportsStreaming
             ? gt(
@@ -1454,8 +1476,10 @@ export function VoiceSettingsPanel() {
       <SettingsSection id="voice-input" title={gt("Input")}>
         <SettingsRow
           {...setting("voice-microphone")}
-          title={gt("Microphone")}
-          description={gt("Voice input uses the first connected microphone in this list.")}
+          title={<ClientSettingTitle>{gt("Microphone")}</ClientSettingTitle>}
+          description={gt(
+            "Audio is recorded on this device and transcribed wherever you choose under Transcription. Voice input uses the first connected microphone in this list.",
+          )}
           control={
             <Tooltip>
               <TooltipTrigger
@@ -1488,7 +1512,7 @@ export function VoiceSettingsPanel() {
         />
         <SettingsRow
           {...setting("dictation-shortcut-mode")}
-          title={gt("Dictation shortcut")}
+          title={<ClientSettingTitle>{gt("Dictation shortcut")}</ClientSettingTitle>}
           description={`${messages(SHORTCUT_MODES[settings.voiceShortcutMode].hint)}.`}
           control={
             <Select
@@ -1523,7 +1547,7 @@ export function VoiceSettingsPanel() {
       <SettingsSection id="voice-transcription" title={gt("Transcription")}>
         <SettingsRow
           {...setting("voice-transcription-destination")}
-          title={gt("Transcribe with")}
+          title={<ClientSettingTitle>{gt("Transcribe with")}</ClientSettingTitle>}
           description={
             destination.environmentId && chosenUnsupported
               ? gt("{label} can’t transcribe audio locally. Choose another destination.", {
@@ -1700,7 +1724,7 @@ export function VoiceSettingsPanel() {
         {(model || destination.cloudProvider || destination.device) && (
           <SettingsRow
             {...setting("speech-language")}
-            title={gt("Language")}
+            title={<ClientSettingTitle>{gt("Language")}</ClientSettingTitle>}
             description={
               destination.device
                 ? gt(
@@ -1734,7 +1758,7 @@ export function VoiceSettingsPanel() {
         )}
         {model?.supportsTranslation ? (
           <SettingsRow
-            title={gt("Translate to English")}
+            title={<ClientSettingTitle>{gt("Translate to English")}</ClientSettingTitle>}
             description={gt("Speak any language and get English text.")}
             control={
               <Switch
@@ -1749,7 +1773,7 @@ export function VoiceSettingsPanel() {
         ) : null}
         <SettingsRow
           {...setting("speech-silence-filtering")}
-          title={gt("Silence filtering")}
+          title={<ClientSettingTitle>{gt("Silence filtering")}</ClientSettingTitle>}
           description={
             destination.device
               ? gt("Apple Speech handles silence itself.")
@@ -1770,7 +1794,7 @@ export function VoiceSettingsPanel() {
         />
         <SettingsRow
           {...setting("remove-filler-words")}
-          title={gt("Remove filler words")}
+          title={<ClientSettingTitle>{gt("Remove filler words")}</ClientSettingTitle>}
           description={
             destination.device
               ? gt("Not available with Apple Speech.")
@@ -1805,8 +1829,8 @@ export function VoiceSettingsPanel() {
       <SettingsSection id="voice-dictionary" title={gt("Dictionary")}>
         <SettingsRow
           {...setting("speech-dictionary")}
-          title={gt("Your dictionary")}
-          description={gt("Names and terms to spell your way, saved on this device.")}
+          title={<ClientSettingTitle>{gt("Your dictionary")}</ClientSettingTitle>}
+          description={gt("Names and terms to spell your way.")}
         >
           <div className="mt-3 pb-2">
             <DictionaryEditor
@@ -1821,7 +1845,7 @@ export function VoiceSettingsPanel() {
 
       <SettingsSection id={setting("speech-post-processing").id} title={gt("Cleanup")}>
         <SettingsRow
-          title={gt("Clean up transcripts")}
+          title={<ClientSettingTitle>{gt("Clean up transcripts")}</ClientSettingTitle>}
           description={gt(
             "Off by default. Sends the transcript and nearby draft text, never audio, to the cleanup model.",
           )}
@@ -1835,7 +1859,7 @@ export function VoiceSettingsPanel() {
         />
         {cleanupEnabled ? (
           <SettingsRow
-            title={gt("Instructions")}
+            title={<ClientSettingTitle>{gt("Instructions")}</ClientSettingTitle>}
             description={
               settings.speechPostProcessingPrompt.mode === "custom"
                 ? gt("Your own instructions for cleanup.")
@@ -1899,7 +1923,7 @@ export function VoiceSettingsPanel() {
         {cleanupEnabled ? (
           <SettingsRow
             {...setting("speech-correction-word")}
-            title={gt("Correction cue")}
+            title={<ClientSettingTitle>{gt("Correction cue")}</ClientSettingTitle>}
             description={gt("The phrase you say to fix a mistake, like “scratch that”.")}
             control={
               <Input
