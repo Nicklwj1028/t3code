@@ -305,6 +305,7 @@ function RemoteSubagentRow(props: {
   const gt = useGT();
   const m = useMessages();
   const { remoteChild } = props.agent;
+  const remoteThreadId = remoteChild.threadId;
   const status = props.agent.status;
   const failed = status === "failed";
   const timing = {
@@ -317,7 +318,11 @@ function RemoteSubagentRow(props: {
     title: props.agent.title ?? gt("Subagent"),
     isSubagent: true,
   });
-  const opener = useLinkedThreadOpener(props.parentRef, remoteChild, title);
+  const opener = useLinkedThreadOpener(
+    props.parentRef,
+    remoteThreadId === undefined ? undefined : { ...remoteChild, threadId: remoteThreadId },
+    title,
+  );
   const trigger = useSideThreadTrigger();
   return (
     <li className="group relative flex h-8 items-center rounded-lg">
@@ -329,6 +334,7 @@ function RemoteSubagentRow(props: {
               size="sm"
               variant="ghost"
               part="row"
+              aria-disabled={opener === null || undefined}
               {...(opener ? trigger(opener.open, { panel: opener.mode === "linked" }) : {})}
             />
           }
@@ -356,7 +362,9 @@ function RemoteSubagentRow(props: {
             </span>
             <span className="shrink-0 tabular-nums">
               ·{" "}
-              {showElapsed ? (
+              {remoteThreadId === undefined && props.agent.result === null ? (
+                gt("Launching")
+              ) : showElapsed ? (
                 <AgentElapsed agent={timing} compact />
               ) : (
                 threadRelationshipStatusLabel(status, m)
@@ -368,9 +376,20 @@ function RemoteSubagentRow(props: {
           <LineageTooltipContent
             title={title}
             hint={
-              opener?.mode === "linked"
-                ? gt("Read the thread on {label}", { label: remoteChild.label })
-                : gt("Open on {label}", { label: remoteChild.label })
+              remoteChild.launchError ??
+              (remoteThreadId === undefined
+                ? gt("{status} on {label}.", {
+                    status:
+                      props.agent.result === null
+                        ? gt("Launching")
+                        : threadRelationshipStatusLabel(status, m),
+                    label: remoteChild.label,
+                  })
+                : opener?.mode === "linked"
+                  ? gt("Read the thread on {label}", {
+                      label: remoteChild.label,
+                    })
+                  : gt("Open on {label}", { label: remoteChild.label }))
             }
           />
         </TooltipPopup>
