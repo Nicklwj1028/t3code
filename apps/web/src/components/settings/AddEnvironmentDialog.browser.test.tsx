@@ -89,9 +89,7 @@ describe("AddEnvironmentDialog", () => {
 
     await openDialogOnSsh();
     await userEvent.fill(page.getByPlaceholder("Search hosts or type devbox"), "devbox");
-    await userEvent.click(
-      page.getByRole("dialog").getByRole("button", { name: "Add environment" }),
-    );
+    await userEvent.click(page.getByRole("dialog").getByRole("button", { name: "Connect & add" }));
     expect(mocks.connectSshEnvironment).toHaveBeenCalledOnce();
 
     await expectDefaultModeAfterReopen();
@@ -106,9 +104,7 @@ describe("AddEnvironmentDialog", () => {
     );
     await openDialogOnSsh();
     await userEvent.type(page.getByPlaceholder("Search hosts or type devbox"), "devbox");
-    await userEvent.click(
-      page.getByRole("dialog").getByRole("button", { name: "Add environment" }),
-    );
+    await userEvent.click(page.getByRole("dialog").getByRole("button", { name: "Connect & add" }));
     await expect.element(page.getByText(/connection refused/)).toBeInTheDocument();
 
     await userEvent.click(remoteCard());
@@ -143,14 +139,19 @@ describe("AddEnvironmentDialog", () => {
     });
     mocks.connectSshEnvironment.mockImplementationOnce(() => pending);
     await userEvent.fill(page.getByPlaceholder("Search hosts or type devbox"), "devbox");
-    await userEvent.click(
-      page.getByRole("dialog").getByRole("button", { name: "Add environment" }),
-    );
+    await userEvent.click(page.getByRole("dialog").getByRole("button", { name: "Connect & add" }));
     await userEvent.keyboard("{Escape}");
     await expectDefaultModeAfterReopen();
-    finishConnection(AsyncResult.failure(Cause.fail(new Error("dismissed SSH attempt"))));
+    // The spinner's "Loading" status is part of the button's accessible name.
     await expect
-      .element(page.getByRole("dialog").getByRole("button", { name: "Add environment" }))
+      .element(page.getByRole("dialog").getByRole("button", { name: /Connecting to devbox…$/ }))
+      .toBeDisabled();
+    await expect.element(page.getByText(/opening an SSH tunnel/)).toBeInTheDocument();
+    finishConnection(AsyncResult.failure(Cause.fail(new Error("dismissed SSH attempt"))));
+    await userEvent.fill(page.getByPlaceholder("backend.example.com"), "devbox.example.com");
+    await userEvent.fill(page.getByPlaceholder("PAIRCODE"), "PAIRCODE");
+    await expect
+      .element(page.getByRole("dialog").getByRole("button", { name: "Connect & add" }))
       .toBeEnabled();
     await expect.element(page.getByText(/dismissed SSH attempt/)).not.toBeInTheDocument();
   });
