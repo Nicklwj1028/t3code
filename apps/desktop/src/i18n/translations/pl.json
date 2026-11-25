@@ -123,5 +123,12 @@
   "8af79268f2349f4c": "Kopiuj adres e-mail",
   "a9f9254d458e49fe": "Kopiuj obraz",
   "9c1b20fbc881de5d": "Konfiguracja pulpitu",
-  "1b14230874f19eb9": "Obrazy"
+  "1b14230874f19eb9": "Obrazy",
+  "e632aac04674913c": "{origin} chce korzystać z twojej kamery i mikrofonu",
+  "379c230d24c9b5c5": "{origin} chce korzystać z twojego mikrofonu",
+  "576ac67fdb145936": "{origin} chce korzystać z twojej kamery",
+  "d8d5fbd2529b6bd3": "macOS zablokował T3 Code możliwość korzystania z kamery i mikrofonu",
+  "65dff766a75b43d5": "macOS zablokował T3 Code możliwość korzystania z mikrofonu",
+  "39e3d7326db9af25": "macOS zablokował T3 Code możliwość korzystania z kamery",
+  "fb7c135eaced773b": "Zezwól T3 Code w Ustawieniach systemowych › Prywatność i ochrona, a następnie uruchom T3 Code ponownie."
 }
