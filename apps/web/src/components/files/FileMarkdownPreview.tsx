@@ -33,6 +33,7 @@ export function FileMarkdownPreview(props: {
       workspaceMutationId={props.workspaceMutationId}
       className={props.className ?? "mx-auto max-w-4xl px-6 py-5"}
       onTaskListChange={props.onTaskListChange}
+      readOnlyTaskList={props.onTaskListChange === undefined}
     />
   );
 }
