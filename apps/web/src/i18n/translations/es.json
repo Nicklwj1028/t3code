@@ -12887,5 +12887,10 @@
   "f6a91589456cca50": "Aprobado",
   "c92657bb7f2293ff": "Necesita aprobación",
   "f1e5c1be1ac92361": "Aprobar",
-  "fcb5f3c4d4753326": "Esta conexión no puede aprobar comandos. Usa un cliente que pueda usar el terminal."
+  "fcb5f3c4d4753326": "Esta conexión no puede aprobar comandos. Usa un cliente que pueda usar el terminal.",
+  "2c8f841a78699887": "El host rechazó el cambio. Actualiza e inténtalo de nuevo.",
+  "7c5a90bf39328351": "Esta descripción cambió en otro lugar desde que empezaste a editarla. Tu borrador se conserva abajo.",
+  "8fc15cfdaa9abfc6": "Mostrar la descripción actual",
+  "5574a212c0cd0256": "Descartar mi borrador",
+  "e5d6dc0c92c17ff7": "Conservar mi borrador"
 }

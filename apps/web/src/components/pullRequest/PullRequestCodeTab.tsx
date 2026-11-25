@@ -379,6 +379,7 @@ interface MutableAnnotationGroup {
 }
 
 interface DraftAnchor {
+  readonly headSha?: string;
   // A refresh re-keys every file's render key, so the draft finds its file by identity and content.
   readonly identityKey: string;
   readonly fileVersion: number;
@@ -1136,6 +1137,7 @@ function PullRequestCodeTab({
       resolveDiffReviewAnchor(file, range, rangeComments);
     if (anchor === null) return;
     setDraft({
+      ...(data?.headSha === undefined ? {} : { headSha: data.headSha }),
       identityKey: buildFileDiffIdentityKey(file),
       fileVersion: buildFileDiffContentVersion(file),
       path,
@@ -1431,6 +1433,7 @@ function PullRequestCodeTab({
             }
             addComment(reviewKey, {
               id: nextPendingReviewCommentId(),
+              ...(draft.headSha === undefined ? {} : { headSha: draft.headSha }),
               path: draft.path,
               ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
               ...(draft.startPosition === undefined ? {} : { startPosition: draft.startPosition }),

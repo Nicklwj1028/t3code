@@ -12892,5 +12892,10 @@
   "f6a91589456cca50": "Approuvée",
   "c92657bb7f2293ff": "Approbation requise",
   "f1e5c1be1ac92361": "Approuver",
-  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal."
+  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal.",
+  "2c8f841a78699887": "L’hôte a refusé la modification. Actualisez et réessayez.",
+  "7c5a90bf39328351": "Cette description a été modifiée ailleurs depuis que vous avez commencé à la modifier. Votre brouillon est conservé ci-dessous.",
+  "8fc15cfdaa9abfc6": "Afficher la description actuelle",
+  "5574a212c0cd0256": "Abandonner mon brouillon",
+  "e5d6dc0c92c17ff7": "Garder mon brouillon"
 }

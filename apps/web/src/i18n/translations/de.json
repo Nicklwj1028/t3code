@@ -12892,5 +12892,10 @@
   "f6a91589456cca50": "Genehmigt",
   "c92657bb7f2293ff": "Genehmigung nötig",
   "f1e5c1be1ac92361": "Genehmigen",
-  "fcb5f3c4d4753326": "Über diese Verbindung lassen sich keine Befehle genehmigen. Verwende einen Client, der das Terminal verwenden darf."
+  "fcb5f3c4d4753326": "Über diese Verbindung lassen sich keine Befehle genehmigen. Verwende einen Client, der das Terminal verwenden darf.",
+  "2c8f841a78699887": "Der Host hat die Änderung abgelehnt. Aktualisiere und versuche es erneut.",
+  "7c5a90bf39328351": "Diese Beschreibung wurde woanders geändert, seit du mit der Bearbeitung begonnen hast. Dein Entwurf bleibt unten erhalten.",
+  "8fc15cfdaa9abfc6": "Aktuelle Beschreibung anzeigen",
+  "5574a212c0cd0256": "Meinen Entwurf verwerfen",
+  "e5d6dc0c92c17ff7": "Meinen Entwurf behalten"
 }

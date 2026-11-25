@@ -12901,5 +12901,10 @@
   "f6a91589456cca50": "Approved",
   "c92657bb7f2293ff": "Needs approval",
   "f1e5c1be1ac92361": "Approve",
-  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal."
+  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
+  "2c8f841a78699887": "The host refused the change. Refresh and try again.",
+  "7c5a90bf39328351": "This description changed elsewhere since you started editing. Your draft is kept below.",
+  "8fc15cfdaa9abfc6": "Show the current description",
+  "5574a212c0cd0256": "Discard my draft",
+  "e5d6dc0c92c17ff7": "Keep my draft"
 }

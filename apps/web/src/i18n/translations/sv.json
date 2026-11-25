@@ -12899,5 +12899,10 @@
   "f6a91589456cca50": "Godkänt",
   "c92657bb7f2293ff": "Behöver godkännande",
   "f1e5c1be1ac92361": "Godkänn",
-  "fcb5f3c4d4753326": "Den här anslutningen kan inte godkänna kommandon. Använd en klient som får använda terminalen."
+  "fcb5f3c4d4753326": "Den här anslutningen kan inte godkänna kommandon. Använd en klient som får använda terminalen.",
+  "2c8f841a78699887": "Värden avvisade ändringen. Uppdatera och försök igen.",
+  "7c5a90bf39328351": "Den här beskrivningen har ändrats någon annanstans sedan du började redigera. Ditt utkast finns kvar nedan.",
+  "8fc15cfdaa9abfc6": "Visa den aktuella beskrivningen",
+  "5574a212c0cd0256": "Kasta mitt utkast",
+  "e5d6dc0c92c17ff7": "Behåll mitt utkast"
 }

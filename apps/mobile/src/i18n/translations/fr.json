@@ -5637,5 +5637,11 @@
   "eb287395a09cd288": "Envoyer les traces de connexion",
   "6787f93bbf6ce0b6": "Aide l’équipe T3 Code à résoudre les problèmes de connexion. Les traces contiennent des durées, des types d’erreur, un identifiant de cette session de l’app et la version de l’app, jamais vos fils, prompts ni votre code. Modifiable dans Réglages > À propos de T3 Code > Diagnostic.",
   "0b1e4aecbd38e0cf": "Quand l’app se connecte à un ordinateur via {product}, elle envoie à l’équipe T3 Code la durée de chaque étape, le type d’erreur, un identifiant de cette session de l’app et la version de l’app. Les traces n’incluent jamais vos fils, prompts ni votre code.",
-  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets."
+  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets.",
+  "70283068f9bb4114": "Cette description a été modifiée ailleurs depuis que vous avez commencé à la modifier. Votre brouillon est conservé ci-dessus.",
+  "daf41681db7a899a": "Masquer la description actuelle",
+  "8fc15cfdaa9abfc6": "Afficher la description actuelle",
+  "2d98551f5e3365ac": "Aucune description fournie.",
+  "5574a212c0cd0256": "Abandonner mon brouillon",
+  "e5d6dc0c92c17ff7": "Garder mon brouillon"
 }

@@ -12892,5 +12892,10 @@
   "f6a91589456cca50": "Aprovado",
   "c92657bb7f2293ff": "Precisa de aprovação",
   "f1e5c1be1ac92361": "Aprovar",
-  "fcb5f3c4d4753326": "Esta conexão não pode aprovar comandos. Use um cliente que possa usar o terminal."
+  "fcb5f3c4d4753326": "Esta conexão não pode aprovar comandos. Use um cliente que possa usar o terminal.",
+  "2c8f841a78699887": "O host recusou a alteração. Atualize e tente novamente.",
+  "7c5a90bf39328351": "Esta descrição foi alterada em outro lugar desde que você começou a editá-la. Seu rascunho foi mantido abaixo.",
+  "8fc15cfdaa9abfc6": "Mostrar a descrição atual",
+  "5574a212c0cd0256": "Descartar meu rascunho",
+  "e5d6dc0c92c17ff7": "Manter meu rascunho"
 }

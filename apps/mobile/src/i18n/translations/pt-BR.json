@@ -5637,5 +5637,11 @@
   "eb287395a09cd288": "Enviar traces de conexão",
   "6787f93bbf6ce0b6": "Ajuda a equipe do T3 Code a corrigir problemas de conexão. Os traces incluem tempos, tipos de erro, um ID desta sessão do app e a versão do app, nunca suas conversas, prompts ou código. Você pode mudar isso em Configurações > Sobre o T3 Code > Diagnóstico.",
   "0b1e4aecbd38e0cf": "Quando o app se conecta a um computador pelo {product}, ele envia à equipe do T3 Code quanto tempo cada etapa levou, o tipo de erro, um ID desta sessão do app e a versão do app. Os traces nunca incluem suas conversas, prompts ou código.",
-  "e0856d6a402ad821": "A política de {organization} não permite comandos de layout de worktree de projetos."
+  "e0856d6a402ad821": "A política de {organization} não permite comandos de layout de worktree de projetos.",
+  "70283068f9bb4114": "Esta descrição foi alterada em outro lugar desde que você começou a editá-la. Seu rascunho foi mantido acima.",
+  "daf41681db7a899a": "Ocultar a descrição atual",
+  "8fc15cfdaa9abfc6": "Mostrar a descrição atual",
+  "2d98551f5e3365ac": "Nenhuma descrição fornecida.",
+  "5574a212c0cd0256": "Descartar meu rascunho",
+  "e5d6dc0c92c17ff7": "Manter meu rascunho"
 }
