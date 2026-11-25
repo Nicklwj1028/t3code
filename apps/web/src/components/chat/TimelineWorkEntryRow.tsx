@@ -375,7 +375,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         }
         label={
           <span
-            className={cn("text-sm font-medium", warning ? "text-warning" : "text-destructive")}
+            className={cn(
+              "text-sm font-medium",
+              warning ? "text-warning-foreground" : "text-destructive-foreground",
+            )}
           >
             {label}
           </span>
@@ -540,9 +543,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             : iconConfig.className,
   );
   const headingClass = showWarningIndicator
-    ? "font-medium text-warning"
+    ? "font-medium text-warning-foreground"
     : showDestructiveRowStyle
-      ? "font-medium text-destructive"
+      ? "font-medium text-destructive-foreground"
       : workLogEntryIsToolLike(workEntry)
         ? "text-secondary-label"
         : "text-foreground/80";
